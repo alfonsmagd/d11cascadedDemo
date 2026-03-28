@@ -416,3 +416,9 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Local project-specific exclusions
+*.fx
+Cascaded.D3D1110E/
+!Media/sponza/*.obj
+Thumbs.db
