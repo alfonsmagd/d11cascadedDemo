@@ -12,6 +12,9 @@
       <UniqueIdentifier>{2c3d4c8c-5d1a-459a-a05a-a4e4b608a44e}</UniqueIdentifier>
       <Extensions>fx;fxh;hlsl</Extensions>
     </Filter>
+    <Filter Include="GUI">
+      <UniqueIdentifier>{49ece62e-6306-483c-b77a-1649a56d9dee}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <None Include="DXUT\Optional\directx.ico">
@@ -90,6 +93,21 @@
     <CLInclude Include="ShadowSampleMisc.h" />
     <CLInclude Include="WaitDlg.h" />
     <CLInclude Include="xnacollision.h" />
+    <ClCompile Include="GuiControlBase.cpp">
+      <Filter>GUI</Filter>
+    </ClCompile>
+    <ClCompile Include="GuiDebugPanel.cpp">
+      <Filter>GUI</Filter>
+    </ClCompile>
+    <ClCompile Include="GuiSelectorPanel.cpp">
+      <Filter>GUI</Filter>
+    </ClCompile>
+    <ClCompile Include="GuiShadowPanel.cpp">
+      <Filter>GUI</Filter>
+    </ClCompile>
+    <ClCompile Include="GuiVoxelPanel.cpp">
+      <Filter>GUI</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="RenderCascadeScene.hlsl">
@@ -107,6 +125,24 @@
       <Filter>Resource Files</Filter>
     </ResourceCompile>
     <ClInclude Include="VoxelizationMisc.h" />
+    <ClInclude Include="GuiVoxelPanel.h">
+      <Filter>GUI</Filter>
+    </ClInclude>
+    <ClInclude Include="GuiControlBase.h">
+      <Filter>GUI</Filter>
+    </ClInclude>
+    <ClInclude Include="GuiDebugPanel.h">
+      <Filter>GUI</Filter>
+    </ClInclude>
+    <ClInclude Include="GuiRuntimeContext.h">
+      <Filter>GUI</Filter>
+    </ClInclude>
+    <ClInclude Include="GuiSelectorPanel.h">
+      <Filter>GUI</Filter>
+    </ClInclude>
+    <ClInclude Include="GuiShadowPanel.h">
+      <Filter>GUI</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Voxelization.hlsl">

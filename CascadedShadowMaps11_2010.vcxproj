@@ -414,9 +414,20 @@
   <ItemGroup>
     <ClCompile Include="CascadedShadowMaps11.cpp" />
     <ClCompile Include="CascadedShadowsManager.cpp" />
+    <ClCompile Include="GuiControlBase.cpp" />
+    <ClCompile Include="GuiDebugPanel.cpp" />
+    <ClCompile Include="GuiSelectorPanel.cpp" />
+    <ClCompile Include="GuiShadowPanel.cpp" />
+    <ClCompile Include="GuiVoxelPanel.cpp" />
     <ClCompile Include="ShadowSampleMisc.cpp" />
     <ClCompile Include="xnacollision.cpp" />
     <CLInclude Include="CascadedShadowsManager.h" />
+    <ClInclude Include="GuiControlBase.h" />
+    <ClInclude Include="GuiDebugPanel.h" />
+    <ClInclude Include="GuiRuntimeContext.h" />
+    <ClInclude Include="GuiSelectorPanel.h" />
+    <ClInclude Include="GuiShadowPanel.h" />
+    <ClInclude Include="GuiVoxelPanel.h" />
     <CLInclude Include="ShadowSampleMisc.h" />
     <ClInclude Include="VoxelizationMisc.h" />
     <CLInclude Include="WaitDlg.h" />

@@ -57,8 +57,7 @@ public:
     HRESULT RenderDebug(ID3D11DeviceContext* pd3dDeviceContext,
         ID3D11RenderTargetView* prtvBackBuffer,
         ID3D11DepthStencilView* pdsvBackBuffer,
-        D3D11_VIEWPORT* dxutViewPort,
-        bool enable = false);
+        D3D11_VIEWPORT* dxutViewPort);
 
     HRESULT RenderVoxelization(ID3D11DeviceContext* pd3dDeviceContext, 
                                ISceneMesh* pMesh, CFirstPersonCamera* pActiveCamera = NULL);
@@ -71,6 +70,8 @@ public:
         bool bVisualize = false);
 
     void InvalidateStaticVoxelization() { m_bStaticVoxelizationDirty = true; }
+    void SetRenderDebugEnabled( bool enabled ) { m_bRenderDebug = enabled; }
+    bool IsRenderDebugEnabled() const { return m_bRenderDebug; }
 
     FLOAT                               m_fStaticVoxelHeightWarp = 0.55f;
     FLOAT                               m_fVoxelVisualizeSurfaceSnap = 0.22f;
@@ -146,6 +147,7 @@ private:
     XMVECTOR                            m_vDynamicVoxelAABBMin;
     XMVECTOR                            m_vDynamicVoxelAABBMax;
     bool                                m_bStaticVoxelizationDirty = true;
+    bool                                m_bRenderDebug = false;
                                                                                // For example: when the shadow buffer size changes.
     char                                m_cvsModel[31];
     char                                m_cpsModel[31];

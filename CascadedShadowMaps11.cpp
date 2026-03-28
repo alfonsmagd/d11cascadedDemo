@@ -1,4 +1,4 @@
-//--------------------------------------------------------------------------------------
+﻿//--------------------------------------------------------------------------------------
 // File: Cascaded11.cpp
 //
 // This sample demonstrates cascaded shadow maps.
@@ -14,8 +14,13 @@
 
 #include "ShadowSampleMisc.h"
 #include "CascadedShadowsManager.h"
+#include "GuiDebugPanel.h"
+#include "GuiSelectorPanel.h"
+#include "GuiShadowPanel.h"
+#include "GuiVoxelPanel.h"
 #include "SceneMesh.h"
 #include <commdlg.h>
+#include <vector>
 #include "WaitDlg.h"
 
 #pragma comment(lib, "legacy_stdio_definitions.lib")
@@ -36,31 +41,8 @@ SDKSceneMesh                g_MeshTestScene( L"ShadowColumns\\testscene.sdkmesh"
 OBJSceneMesh                g_MeshSponza( L"sponza\\sponza.obj", 0.05f );
 ISceneMesh*                 g_pSelectedMesh = &g_MeshPowerPlant;                
 
-// This enum is used to allow the user to select the number of cascades in the scene.
-enum CASCADE_LEVELS 
-{
-    L1COMBO,
-    L2COMBO,
-    L3COMBO,
-    L4COMBO,
-    L5COMBO,
-    L6COMBO,
-    L7COMBO,
-    L8COMBO
-};
-
 // DXUT GUI stuff
-CDXUTComboBox*              g_DepthBufferFormatCombo;
-CDXUTComboBox*              g_ShadowBufferTypeCombo;
-CDXUTComboBox*              g_CascadeLevelsCombo;
-CDXUTComboBox*              g_CameraSelectCombo;
-CDXUTComboBox*              g_SceneSelectCombo;
-CDXUTComboBox*              g_FitToCascadesCombo;
-CDXUTComboBox*              g_FitToNearFarCombo;
-CDXUTComboBox*              g_CascadeSelectionCombo;
 CD3DSettingsDlg             g_D3DSettingsDlg;       // Device settings dialog
-CDXUTDialog                 g_HUD;                  // manages the 3D   
-CDXUTDialog                 g_SampleUI;             // dialog for sample specific controls
 CDXUTTextHelper*            g_pTxtHelper = NULL;
 
 
@@ -69,7 +51,6 @@ INT                         g_nNumActiveLights;
 INT                         g_nActiveLight;
 BOOL                        g_bShowHelp = FALSE;    // If true, it renders the UI control text
 bool                        g_bVisualizeCascades = FALSE;
-bool                        g_bDebugCascades = FALSE;
 bool                        g_bVisualizeVoxel = FALSE;
 bool                        g_bMoveLightTexelSize = TRUE;
 FLOAT                       g_fAspectRatio = 1.0f;
@@ -128,7 +109,7 @@ float                       g_fDepthScale;
 #define IDC_BLEND_BETWEEN_MAPS_CHECK 36
 #define IDC_BLEND_MAPS_SLIDER        37
 
-#define IDC_TOGGLE_DEBUG_CASCADES   38
+#define IDC_TOGGLE_DEBUG_CASCADES     38
 #define IDC_TOGGLE_VISUALIZE_VOXEL    39
 #define IDC_VOXEL_SURFACE_SNAP_TEXT   40
 #define IDC_VOXEL_SURFACE_SNAP        41
@@ -140,6 +121,74 @@ float                       g_fDepthScale;
 #define IDC_VOXEL_YZ_FOOTPRINT        47
 #define IDC_VOXEL_TOP_COVERAGE_TEXT   48
 #define IDC_VOXEL_TOP_COVERAGE        49
+#define IDC_GUI_CATEGORY_TEXT         50
+#define IDC_GUI_CATEGORY_COMBO        51
+#define IDC_GUI_VISUALIZE_CASCADES    52
+#define IDC_GUI_BLEND_AMOUNT_TEXT     53
+#define IDC_GUI_DEPTHFORMAT_TEXT      54
+#define IDC_GUI_SELECTED_CAMERA_TEXT  55
+#define IDC_GUI_CASCADELEVELS_TEXT    56
+#define IDC_GUI_FIT_TO_CASCADE_TEXT   57
+#define IDC_GUI_FIT_TO_NEARFAR_TEXT   58
+#define IDC_GUI_CASCADE_SELECT_TEXT   59
+
+Gui_SelectorPanelState      g_SelectorGuiState = { GUI_PANEL_CATEGORY_DEBUG };
+Gui_SelectorPanelIds        g_SelectorPanelIds = { IDC_GUI_CATEGORY_TEXT, IDC_GUI_CATEGORY_COMBO };
+Gui_SelectorPanel           g_SelectorPanel( g_SelectorPanelIds, g_SelectorGuiState );
+Gui_DebugPanelState         g_DebugGuiState = {};
+Gui_DebugPanelIds           g_DebugPanelIds = { IDC_TOGGLE_DEBUG_CASCADES };
+Gui_DebugPanel              g_DebugPanel( g_DebugPanelIds, g_DebugGuiState );
+Gui_ShadowPanelState        g_ShadowGuiState = {};
+Gui_ShadowPanelIds          g_ShadowPanelIds =
+{
+    IDC_GUI_VISUALIZE_CASCADES,
+    IDC_GUI_DEPTHFORMAT_TEXT,
+    IDC_DEPTHBUFFERFORMAT,
+    IDC_GUI_SELECTED_CAMERA_TEXT,
+    IDC_SELECTED_CAMERA,
+    IDC_GUI_CASCADELEVELS_TEXT,
+    IDC_CASCADELEVELS,
+    IDC_GUI_FIT_TO_CASCADE_TEXT,
+    IDC_FIT_TO_CASCADE,
+    IDC_GUI_FIT_TO_NEARFAR_TEXT,
+    IDC_FIT_TO_NEARFAR,
+    IDC_GUI_CASCADE_SELECT_TEXT,
+    IDC_CASCADE_SELECT,
+    IDC_BUFFER_SIZETEXT,
+    IDC_BUFFER_SIZE,
+    IDC_PCF_SIZETEXT,
+    IDC_PCF_SIZE,
+    IDC_PCF_OFFSET_SIZETEXT,
+    IDC_PCF_OFFSET_SIZE,
+    IDC_BLEND_BETWEEN_MAPS_CHECK,
+    IDC_GUI_BLEND_AMOUNT_TEXT,
+    IDC_BLEND_MAPS_SLIDER,
+    IDC_TOGGLE_DERIVATIVE_OFFSET,
+    IDC_MOVE_LIGHT_IN_TEXEL_INC,
+    { IDC_CASCADELEVEL1TEXT, IDC_CASCADELEVEL2TEXT, IDC_CASCADELEVEL3TEXT, IDC_CASCADELEVEL4TEXT,
+      IDC_CASCADELEVEL5TEXT, IDC_CASCADELEVEL6TEXT, IDC_CASCADELEVEL7TEXT, IDC_CASCADELEVEL8TEXT },
+    { IDC_CASCADELEVEL1, IDC_CASCADELEVEL2, IDC_CASCADELEVEL3, IDC_CASCADELEVEL4,
+      IDC_CASCADELEVEL5, IDC_CASCADELEVEL6, IDC_CASCADELEVEL7, IDC_CASCADELEVEL8 }
+};
+Gui_ShadowPanel             g_ShadowPanel( g_ShadowPanelIds, g_ShadowGuiState );
+Gui_VoxelPanelState         g_VoxelGuiState = {};
+Gui_VoxelPanelIds           g_VoxelPanelIds =
+{
+    IDC_TOGGLE_VISUALIZE_VOXEL,
+    IDC_VOXEL_SURFACE_SNAP_TEXT,
+    IDC_VOXEL_SURFACE_SNAP,
+    IDC_VOXEL_HEIGHT_WARP_TEXT,
+    IDC_VOXEL_HEIGHT_WARP,
+    IDC_VOXEL_XY_FOOTPRINT_TEXT,
+    IDC_VOXEL_XY_FOOTPRINT,
+    IDC_VOXEL_YZ_FOOTPRINT_TEXT,
+    IDC_VOXEL_YZ_FOOTPRINT,
+    IDC_VOXEL_TOP_COVERAGE_TEXT,
+    IDC_VOXEL_TOP_COVERAGE
+};
+Gui_VoxelPanel              g_VoxelPanel( g_VoxelPanelIds, g_VoxelGuiState );
+GuiRuntimeContext           g_GuiRuntimeContext = { &g_CascadedShadow, &g_CascadeConfig, &g_bVisualizeCascades, &g_bVisualizeVoxel, &g_bMoveLightTexelSize, &g_pActiveCamera, &g_ViewerCamera, &g_LightCamera };
+std::vector<GuiPanelBase*>  g_AllGuiPanels;
 
 //--------------------------------------------------------------------------------------
 // Forward declarations 
@@ -166,63 +215,115 @@ void RenderText();
 HRESULT DestroyD3DComponents();
 HRESULT CreateD3DComponents( ID3D11Device* pd3dDevice );
 void UpdateViewerCameraNearFar();
-void UpdateVoxelTuningLabels();
-void CommitVoxelTuningFromUI();
+void RegisterAllGuiPanels();
+void SyncGuiPanelsToRuntime();
+void SyncGuiPanelsFromRuntime();
+bool HandleRuntimeGuiPanelEvent( UINT nEvent, INT nControlID );
+bool DispatchRuntimeGuiPanelMsg( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam );
+void RenderRuntimeGuiPanels( FLOAT fElapsedTime );
+void UpdateGuiPanelVisibility();
 void ResetSceneCameras();
 HRESULT EnsureSceneMeshLoaded( ID3D11Device* pd3dDevice, ISceneMesh* pMesh );
 
-static float GetVoxelSnapSliderValue()
+void RegisterAllGuiPanels()
 {
-    return g_SampleUI.GetSlider(IDC_VOXEL_SURFACE_SNAP)->GetValue() * 0.01f;
+    g_AllGuiPanels.clear();
+    g_AllGuiPanels.push_back( &g_SelectorPanel );
+    g_AllGuiPanels.push_back( &g_DebugPanel );
+    g_AllGuiPanels.push_back( &g_VoxelPanel );
+    g_AllGuiPanels.push_back( &g_ShadowPanel );
 }
 
-static float GetVoxelHeightWarpSliderValue()
+void SyncGuiPanelsToRuntime()
 {
-    return g_SampleUI.GetSlider(IDC_VOXEL_HEIGHT_WARP)->GetValue() * 0.01f;
+    for( size_t i = 0; i < g_AllGuiPanels.size(); ++i )
+    {
+        g_AllGuiPanels[i]->ApplyPendingChanges( g_GuiRuntimeContext );
+    }
 }
 
-static float GetVoxelXYFootprintSliderValue()
+void SyncGuiPanelsFromRuntime()
 {
-    return g_SampleUI.GetSlider(IDC_VOXEL_XY_FOOTPRINT)->GetValue() * 0.01f;
+    for( size_t i = 0; i < g_AllGuiPanels.size(); ++i )
+    {
+        g_AllGuiPanels[i]->UpdateFromRuntime( g_GuiRuntimeContext );
+    }
 }
 
-static float GetVoxelYZFootprintSliderValue()
+bool HandleRuntimeGuiPanelEvent( UINT nEvent, INT nControlID )
 {
-    return g_SampleUI.GetSlider(IDC_VOXEL_YZ_FOOTPRINT)->GetValue() * 0.01f;
+    for( size_t i = 0; i < g_AllGuiPanels.size(); ++i )
+    {
+        if( g_AllGuiPanels[i]->HandleEvent( nEvent, nControlID ) )
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
-static float GetVoxelTopCoverageSliderValue()
+bool DispatchRuntimeGuiPanelMsg( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
 {
-    return g_SampleUI.GetSlider(IDC_VOXEL_TOP_COVERAGE)->GetValue() * 0.01f;
+    for( size_t i = 0; i < g_AllGuiPanels.size(); ++i )
+    {
+        if( g_AllGuiPanels[i]->MsgProc( hWnd, uMsg, wParam, lParam ) )
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
-void UpdateVoxelTuningLabels()
+void RenderRuntimeGuiPanels( FLOAT fElapsedTime )
 {
-    WCHAR desc[128];
-
-    swprintf_s( desc, L"Voxel Snap: %.2f", GetVoxelSnapSliderValue() );
-    g_SampleUI.GetStatic( IDC_VOXEL_SURFACE_SNAP_TEXT )->SetText( desc );
-
-    swprintf_s( desc, L"Height Warp: %.2f", GetVoxelHeightWarpSliderValue() );
-    g_SampleUI.GetStatic( IDC_VOXEL_HEIGHT_WARP_TEXT )->SetText( desc );
-
-    swprintf_s( desc, L"XY Fill: %.2f", GetVoxelXYFootprintSliderValue() );
-    g_SampleUI.GetStatic( IDC_VOXEL_XY_FOOTPRINT_TEXT )->SetText( desc );
-
-    swprintf_s( desc, L"YZ Fill: %.2f", GetVoxelYZFootprintSliderValue() );
-    g_SampleUI.GetStatic( IDC_VOXEL_YZ_FOOTPRINT_TEXT )->SetText( desc );
-
-    swprintf_s( desc, L"Top Coverage: %.2f", GetVoxelTopCoverageSliderValue() );
-    g_SampleUI.GetStatic( IDC_VOXEL_TOP_COVERAGE_TEXT )->SetText( desc );
+    for( size_t i = 0; i < g_AllGuiPanels.size(); ++i )
+    {
+        g_AllGuiPanels[i]->OnRender( fElapsedTime );
+    }
 }
 
-void CommitVoxelTuningFromUI()
+void UpdateGuiPanelVisibility()
 {
-    g_CascadedShadow.m_fVoxelVisualizeSurfaceSnap = GetVoxelSnapSliderValue();
-    g_CascadedShadow.m_fStaticVoxelHeightWarp = GetVoxelHeightWarpSliderValue();
-    g_CascadedShadow.m_fVoxelXYFootprintScale = GetVoxelXYFootprintSliderValue();
-    g_CascadedShadow.m_fVoxelYZFootprintScale = GetVoxelYZFootprintSliderValue();
-    g_CascadedShadow.m_fStaticVoxelTopCoverage = GetVoxelTopCoverageSliderValue();
+    g_SelectorPanel.Open();
+
+    switch( g_SelectorGuiState.selectedCategory )
+    {
+        case GUI_PANEL_CATEGORY_DEBUG:
+            g_DebugPanel.Open();
+            g_VoxelPanel.Close();
+            g_ShadowPanel.Close();
+        break;
+
+        case GUI_PANEL_CATEGORY_VOXELIZATION:
+            g_DebugPanel.Close();
+            g_VoxelPanel.Open();
+            g_ShadowPanel.Close();
+        break;
+
+        case GUI_PANEL_CATEGORY_CASCADES:
+        default:
+            g_DebugPanel.Close();
+            g_VoxelPanel.Close();
+            g_ShadowPanel.Open();
+        break;
+    }
+}
+
+static SCENE_SELECTION GetCurrentSceneSelection()
+{
+    if( g_pSelectedMesh == &g_MeshTestScene )
+    {
+        return TEST_SCENE;
+    }
+
+    if( g_pSelectedMesh == &g_MeshSponza )
+    {
+        return SPONZA_SCENE;
+    }
+
+    return POWER_PLANT_SCENE;
 }
 
 HRESULT EnsureSceneMeshLoaded( ID3D11Device* pd3dDevice, ISceneMesh* pMesh )
@@ -237,7 +338,7 @@ HRESULT EnsureSceneMeshLoaded( ID3D11Device* pd3dDevice, ISceneMesh* pMesh )
 
 void ResetSceneCameras()
 {
-    SCENE_SELECTION ss = (SCENE_SELECTION)PtrToUlong( g_SceneSelectCombo->GetSelectedData() );
+    const SCENE_SELECTION ss = GetCurrentSceneSelection();
 
     D3DXVECTOR3 vecEye( 100.0f, 5.0f, 5.0f );
     D3DXVECTOR3 vecAt( 0.0f, 0.0f, 0.0f );
@@ -347,168 +448,14 @@ void InitApp()
     //g_CascadedShadow.m_iCascadePartitionsZeroToOne[7] = 70;
 
     g_CascadedShadow.m_iCascadePartitionsMax = 100;
-    // Initialize dialogs
     g_D3DSettingsDlg.Init( &g_DialogResourceManager );
-    g_HUD.Init( &g_DialogResourceManager );
-    g_SampleUI.Init( &g_DialogResourceManager );
-
-    g_HUD.SetCallback( OnGUIEvent ); INT iY = 10;
-
-    // Add tons of GUI stuff
-    g_HUD.AddButton( IDC_TOGGLEFULLSCREEN, L"Toggle full screen", 0, iY, 170, 23 );
-    g_HUD.AddButton( IDC_TOGGLEWARP, L"Toggle WARP (F3)", 0, iY += 26, 170, 23, VK_F3 );
-    g_HUD.AddButton( IDC_CHANGEDEVICE, L"Change device (F2)", 0, iY += 26, 170, 23, VK_F2 );
-    g_HUD.AddCheckBox( IDC_TOGGLEVISUALIZECASCADES, L"Visualize Cascades", 0, iY+=26, 170, 23, g_bVisualizeCascades, VK_F8 );
-    g_HUD.AddCheckBox(IDC_TOGGLE_DEBUG_CASCADES, L"Enable Debug Cascades", 0, iY += 26, 170, 23, g_bVisualizeCascades, VK_F9);
-    g_HUD.AddCheckBox(IDC_TOGGLE_VISUALIZE_VOXEL, L"Enable Debug Voxelization", 0, iY += 26, 170, 23, g_bVisualizeVoxel, VK_F9);
-
-    g_HUD.AddComboBox( IDC_DEPTHBUFFERFORMAT, 0, iY += 26, 170, 23, VK_F10, false, &g_DepthBufferFormatCombo );
-    g_DepthBufferFormatCombo->AddItem( L"32 bit Buffer", ULongToPtr( CASCADE_DXGI_FORMAT_R32_TYPELESS ) );
-    g_DepthBufferFormatCombo->AddItem( L"16 bit Buffer", ULongToPtr( CASCADE_DXGI_FORMAT_R16_TYPELESS ) );
-    g_DepthBufferFormatCombo->AddItem(  L"24 bit Buffer", ULongToPtr( CASCADE_DXGI_FORMAT_R24G8_TYPELESS ) );
-
-    SHADOW_TEXTURE_FORMAT sbt = (SHADOW_TEXTURE_FORMAT) PtrToUlong( g_DepthBufferFormatCombo->GetSelectedData() );
-    g_CascadeConfig.m_ShadowBufferFormat = sbt;
-
-    WCHAR desc[256];
-    swprintf_s( desc, L"Texture Size: %d ", g_CascadeConfig.m_iBufferSize ); 
-
-    g_HUD.AddStatic( IDC_BUFFER_SIZETEXT, desc, 0, iY+26, 30, 10);
-    g_HUD.AddSlider( IDC_BUFFER_SIZE, 0, iY+=46, 128, 15,1, 128, g_CascadeConfig.m_iBufferSize / 32 );
-
-    g_HUD.AddStatic( IDC_PCF_SIZETEXT, L"PCF Blur: 3", 0, iY+16, 30, 10);
-    g_HUD.AddSlider( IDC_PCF_SIZE, 90, iY+=20, 64, 15,1, 16, g_CascadedShadow.m_iPCFBlurSize / 2 + 1 );
-    
-    swprintf_s(desc, L" Offset: %0.03f", g_CascadedShadow.m_fPCFOffset );
-    g_HUD.AddStatic( IDC_PCF_OFFSET_SIZETEXT, desc, 0, iY+16, 30, 10);
-    g_HUD.AddSlider( IDC_PCF_OFFSET_SIZE, 115, iY+=20, 50, 15,0, 50,  ( INT )( g_CascadedShadow.m_fPCFOffset * 1000.0f ) );
-
-    swprintf_s(desc, L"Cascade Blur %0.03f", g_CascadedShadow.m_fBlurBetweenCascadesAmount );
-    bool bValue;
-    if( g_CascadedShadow.m_iBlurBetweenCascades == 0 ) bValue = false;
-    else bValue = true;
-
-    g_HUD.AddCheckBox( IDC_BLEND_BETWEEN_MAPS_CHECK, desc, 0, iY+15, 170, 23, bValue );
-    g_HUD.AddSlider( IDC_BLEND_MAPS_SLIDER, 40, iY+33, 100, 15, 0, 100, ( INT )
-        ( g_CascadedShadow.m_fBlurBetweenCascadesAmount * 2000.0f ) );
-    iY+=26;
-
-    if( g_CascadedShadow.m_iDerivativeBasedOffset == 0 ) bValue = false;
-    else bValue = true;
-    g_HUD.AddCheckBox( IDC_TOGGLE_DERIVATIVE_OFFSET, L"DDX, DDY offset", 0, iY+=26, 170, 23, bValue );
-
-
-    WCHAR dta[60];
-    
-    g_HUD.AddComboBox( IDC_SELECTED_SCENE, 0, iY+=26, 170, 23, VK_F8, false, &g_SceneSelectCombo );
-    g_SceneSelectCombo->AddItem( L"Power Plant", ULongToPtr( POWER_PLANT_SCENE ) );
-    g_SceneSelectCombo->AddItem( L"Test Scene", ULongToPtr( TEST_SCENE ) );
-    g_SceneSelectCombo->AddItem( L"Sponza", ULongToPtr( SPONZA_SCENE ) );
-
-
-    g_HUD.AddComboBox( IDC_SELECTED_CAMERA, 0, iY +=26,  170, 23, VK_F9, false, &g_CameraSelectCombo );
-    swprintf_s( dta, L"Eye Camera", EYE_CAMERA + 1 );
-    g_CameraSelectCombo->AddItem(dta, ULongToPtr( EYE_CAMERA ) );     
-    swprintf_s( dta, L"Light Camera", LIGHT_CAMERA + 1 );
-    g_CameraSelectCombo->AddItem(dta, ULongToPtr( LIGHT_CAMERA) );     
-    for( int index=0; index < g_CascadeConfig.m_nCascadeLevels; ++index ) 
-    {
-        swprintf_s( dta, L"Cascade Cam %d", index + 1 );
-        g_CameraSelectCombo->AddItem(dta, ULongToPtr( ORTHO_CAMERA1+index ) );     
-    }
-
-    g_HUD.AddCheckBox( IDC_MOVE_LIGHT_IN_TEXEL_INC, L"Fit Light to Texels", 
-        0, iY+=26, 170, 23, g_bMoveLightTexelSize, VK_F8 );
-    g_CascadedShadow.m_bMoveLightTexelSize = g_bMoveLightTexelSize;
-    g_HUD.AddComboBox( IDC_FIT_TO_CASCADE, 0, iY +=26,  170, 23, VK_F9, false, &g_FitToCascadesCombo );
-    g_FitToCascadesCombo->AddItem( L"Fit Scene", ULongToPtr( FIT_TO_SCENE ) );
-    g_FitToCascadesCombo->AddItem( L"Fit Cascades", ULongToPtr( FIT_TO_CASCADES ) );
-    g_CascadedShadow.m_eSelectedCascadesFit = FIT_TO_SCENE;
-    
-    g_HUD.AddComboBox( IDC_FIT_TO_NEARFAR, 0, iY +=26,  170, 23, VK_F9, false, &g_FitToNearFarCombo );
-    g_FitToNearFarCombo->AddItem( L"AABB/Scene NearFar", ULongToPtr( FIT_NEARFAR_SCENE_AABB ) );
-    g_FitToNearFarCombo->AddItem( L"Pancaking", ULongToPtr( FIT_NEARFAR_PANCAKING ) );
-    g_FitToNearFarCombo->AddItem( L"0:1 NearFar", ULongToPtr( FIT_NEARFAR_ZERO_ONE ) );
-    g_FitToNearFarCombo->AddItem( L"AABB NearFar", ULongToPtr( FIT_NEARFAR_AABB ) );
-    g_CascadedShadow.m_eSelectedNearFarFit =  FIT_NEARFAR_SCENE_AABB;
-
-    g_HUD.AddComboBox( IDC_CASCADE_SELECT, 0, iY +=26,  170, 23, VK_F9, false, &g_CascadeSelectionCombo );
-    g_CascadeSelectionCombo->AddItem( L"Map Selection", ULongToPtr( CASCADE_SELECTION_MAP ) );
-    g_CascadeSelectionCombo->AddItem( L"Interval Selection", ULongToPtr( CASCADE_SELECTION_INTERVAL ) );
-
-    g_CascadedShadow.m_eSelectedCascadeSelection = CASCADE_SELECTION_MAP;
-
-    g_HUD.AddComboBox( IDC_CASCADELEVELS, 0, iY += 26, 170, 23, VK_F11, false, &g_CascadeLevelsCombo );
-    
-    swprintf_s( dta, L"%d Level", 1 );
-    g_CascadeLevelsCombo->AddItem (dta, ULongToPtr( L1COMBO+1 ) );
-    for( INT index=1; index < MAX_CASCADES; ++index ) 
-    {
-        swprintf_s( dta, L"%d Levels", index + 1 );
-        g_CascadeLevelsCombo->AddItem ( dta, ULongToPtr( L1COMBO+index ) );
-    }
-   
-    g_CascadeLevelsCombo->SetSelectedByIndex( g_CascadeConfig.m_nCascadeLevels-1 );
-    
-    INT sp = 12;
-    iY+=20;
-    WCHAR label[16];
-    // Color the cascade labels similar to the visualization.
-    D3DCOLOR tcolors[] = 
-    { 
-        0xFFFF0000,
-        0xFF00FF00,
-        0xFF0000FF,
-        0xFFFF00FF,
-        0xFFFFFF00,
-        0xFFFFFFFF,
-        0xFF00AAFF,
-        0xFFAAFFAA 
-    };  
-    
-    for( INT index=0; index < MAX_CASCADES; ++index ) 
-    {
-        swprintf_s( label,L"L%d: %d", ( index + 1 ), g_CascadedShadow.m_iCascadePartitionsZeroToOne[index] );
-        g_HUD.AddStatic( index+IDC_CASCADELEVEL1TEXT, label, 0, iY+sp, 30, 10);
-        g_HUD.GetStatic( index+IDC_CASCADELEVEL1TEXT )->SetTextColor( tcolors[index] );
-        g_HUD.AddSlider( index+IDC_CASCADELEVEL1, 50, iY+=15, 100, 15,0, 100, g_CascadedShadow.m_iCascadePartitionsZeroToOne[index] );
-    }
-
-    for( INT index=0; index < g_CascadeConfig.m_nCascadeLevels; ++index ) 
-    {
-        g_HUD.GetStatic( IDC_CASCADELEVEL1TEXT + index )->SetVisible( true );
-        g_HUD.GetSlider( IDC_CASCADELEVEL1 + index )->SetVisible( true );
-    }
-    for( int index=g_CascadeConfig.m_nCascadeLevels; index < MAX_CASCADES; ++index ) 
-    {
-        g_HUD.GetStatic( IDC_CASCADELEVEL1TEXT + index )->SetVisible( false );
-        g_HUD.GetSlider( IDC_CASCADELEVEL1 + index )->SetVisible( false  );
-    }
-    
-    g_SampleUI.SetCallback( OnGUIEvent ); iY = 10;
-
-    g_SampleUI.AddStatic( IDC_VOXEL_SURFACE_SNAP_TEXT, L"Voxel Snap", 0, iY, 170, 16 );
-    g_SampleUI.AddSlider( IDC_VOXEL_SURFACE_SNAP, 0, iY += 18, 170, 16, 0, 100,
-        ( INT )( g_CascadedShadow.m_fVoxelVisualizeSurfaceSnap * 100.0f ) );
-
-    g_SampleUI.AddStatic( IDC_VOXEL_HEIGHT_WARP_TEXT, L"Height Warp", 0, iY += 24, 170, 16 );
-    g_SampleUI.AddSlider( IDC_VOXEL_HEIGHT_WARP, 0, iY += 18, 170, 16, 20, 250,
-        ( INT )( g_CascadedShadow.m_fStaticVoxelHeightWarp * 100.0f ) );
-
-    g_SampleUI.AddStatic( IDC_VOXEL_XY_FOOTPRINT_TEXT, L"XY Fill", 0, iY += 24, 170, 16 );
-    g_SampleUI.AddSlider( IDC_VOXEL_XY_FOOTPRINT, 0, iY += 18, 170, 16, 50, 400,
-        ( INT )( g_CascadedShadow.m_fVoxelXYFootprintScale * 100.0f ) );
-
-    g_SampleUI.AddStatic( IDC_VOXEL_YZ_FOOTPRINT_TEXT, L"YZ Fill", 0, iY += 24, 170, 16 );
-    g_SampleUI.AddSlider( IDC_VOXEL_YZ_FOOTPRINT, 0, iY += 18, 170, 16, 50, 400,
-        ( INT )( g_CascadedShadow.m_fVoxelYZFootprintScale * 100.0f ) );
-
-    g_SampleUI.AddStatic( IDC_VOXEL_TOP_COVERAGE_TEXT, L"Top Coverage", 0, iY += 24, 170, 16 );
-    g_SampleUI.AddSlider( IDC_VOXEL_TOP_COVERAGE, 0, iY += 18, 170, 16, 50, 100,
-        ( INT )( g_CascadedShadow.m_fStaticVoxelTopCoverage * 100.0f ) );
-
-    UpdateVoxelTuningLabels();
-    CommitVoxelTuningFromUI();
+    g_SelectorPanel.Initialize( &g_DialogResourceManager, OnGUIEvent );
+    g_DebugPanel.Initialize( &g_DialogResourceManager, OnGUIEvent );
+    g_VoxelPanel.Initialize( &g_DialogResourceManager, OnGUIEvent );
+    g_ShadowPanel.Initialize( &g_DialogResourceManager, OnGUIEvent );
+    RegisterAllGuiPanels();
+    SyncGuiPanelsFromRuntime();
+    UpdateGuiPanelVisibility();
 }
 
 
@@ -603,11 +550,7 @@ LRESULT CALLBACK MsgProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, bo
         return 0;
     }
 
-    // Give the dialogs a chance to handle the message first
-    *pbNoFurtherProcessing = g_HUD.MsgProc( hWnd, uMsg, wParam, lParam );
-    if( *pbNoFurtherProcessing )
-        return 0;
-    *pbNoFurtherProcessing = g_SampleUI.MsgProc( hWnd, uMsg, wParam, lParam );
+    *pbNoFurtherProcessing = DispatchRuntimeGuiPanelMsg( hWnd, uMsg, wParam, lParam );
     if( *pbNoFurtherProcessing )
         return 0;
 
@@ -640,308 +583,14 @@ void CALLBACK OnKeyboard( UINT nChar, bool bKeyDown, bool bAltDown, void* pUserC
 //--------------------------------------------------------------------------------------
 void CALLBACK OnGUIEvent( UINT nEvent, INT nControlID, CDXUTControl* pControl, void* pUserContext )
 {
-    switch( nControlID )
+    UNREFERENCED_PARAMETER( pControl );
+    UNREFERENCED_PARAMETER( pUserContext );
+
+    if( HandleRuntimeGuiPanelEvent( nEvent, nControlID ) )
     {
-        case IDC_TOGGLEFULLSCREEN:
-            DXUTToggleFullScreen(); break;
-        case IDC_TOGGLEWARP:
-            DXUTToggleWARP(); break;
-        case IDC_CHANGEDEVICE:
-            g_D3DSettingsDlg.SetActive( !g_D3DSettingsDlg.IsActive() ); break;
-        break;
-        break;
-        case IDC_FIT_TO_CASCADE:
-            g_CascadedShadow.m_eSelectedCascadesFit = 
-                (FIT_PROJECTION_TO_CASCADES)PtrToUlong( g_FitToCascadesCombo->GetSelectedData() );
-        break;
-        case IDC_FIT_TO_NEARFAR:
-        {
-            g_CascadedShadow.m_eSelectedNearFarFit = 
-                (FIT_TO_NEAR_FAR)PtrToUlong( g_FitToNearFarCombo->GetSelectedData() );
-            if ( g_CascadedShadow.m_eSelectedNearFarFit == FIT_NEARFAR_PANCAKING )
-            {
-                g_CascadedShadow.m_eSelectedCascadeSelection = CASCADE_SELECTION_INTERVAL;
-                g_CascadeSelectionCombo->SetSelectedByData( ULongToPtr( CASCADE_SELECTION_INTERVAL ) );
-            }
-        }
-        break;
-        case IDC_CASCADE_SELECT:
-        {
-            static int iSaveLastCascadeValue = 100;
-            if ( (CASCADE_SELECTION)PtrToUlong( g_CascadeSelectionCombo->GetSelectedData() ) == CASCADE_SELECTION_MAP ) 
-            {
-                if ((FIT_TO_NEAR_FAR)PtrToUlong( g_FitToNearFarCombo->GetSelectedData()) == FIT_NEARFAR_PANCAKING )
-                {
-                    g_FitToNearFarCombo->SetSelectedByData( ULongToPtr( FIT_NEARFAR_SCENE_AABB ) );
-                    g_CascadedShadow.m_eSelectedNearFarFit = FIT_NEARFAR_SCENE_AABB;
-                }
-                g_CascadedShadow.m_iCascadePartitionsZeroToOne[g_CascadeConfig.m_nCascadeLevels -1] = iSaveLastCascadeValue;               
-            }
-            else 
-            {
-                iSaveLastCascadeValue = g_CascadedShadow.m_iCascadePartitionsZeroToOne[g_CascadeConfig.m_nCascadeLevels -1];
-                g_CascadedShadow.m_iCascadePartitionsZeroToOne[g_CascadeConfig.m_nCascadeLevels -1] = 100;               
-            }
-            g_CascadedShadow.m_eSelectedCascadeSelection =
-                (CASCADE_SELECTION)PtrToUlong( g_CascadeSelectionCombo->GetSelectedData() );
-
-            g_HUD.GetSlider( IDC_CASCADELEVEL1 + g_CascadeConfig.m_nCascadeLevels - 1 )->SetValue( 
-                g_CascadedShadow.m_iCascadePartitionsZeroToOne[g_CascadeConfig.m_nCascadeLevels - 1] );
-            WCHAR label[16];
-            swprintf_s( label, L"L%d: %d", g_CascadeConfig.m_nCascadeLevels,
-                g_CascadedShadow.m_iCascadePartitionsZeroToOne[g_CascadeConfig.m_nCascadeLevels - 1]  );
-            g_HUD.GetStatic( IDC_CASCADELEVEL1TEXT + g_CascadeConfig.m_nCascadeLevels - 1 )->SetText( label );
-
-        }
-        break;
-        case IDC_MOVE_LIGHT_IN_TEXEL_INC:
-            g_bMoveLightTexelSize = !g_bMoveLightTexelSize;
-            g_CascadedShadow.m_bMoveLightTexelSize = g_bMoveLightTexelSize;
-        break;
-
-        case IDC_TOGGLEVISUALIZECASCADES :
-            g_bVisualizeCascades = !g_bVisualizeCascades;  
-        break;
-
-        case IDC_TOGGLE_DEBUG_CASCADES :
-            g_bDebugCascades = !g_bDebugCascades;
-        break;
-
-        case IDC_TOGGLE_VISUALIZE_VOXEL :
-            g_bVisualizeVoxel = !g_bVisualizeVoxel;
-        break;
-
-        case IDC_VOXEL_SURFACE_SNAP:
-            UpdateVoxelTuningLabels();
-            g_CascadedShadow.m_fVoxelVisualizeSurfaceSnap = GetVoxelSnapSliderValue();
-        break;
-
-        case IDC_VOXEL_HEIGHT_WARP:
-        case IDC_VOXEL_XY_FOOTPRINT:
-        case IDC_VOXEL_YZ_FOOTPRINT:
-        case IDC_VOXEL_TOP_COVERAGE:
-            UpdateVoxelTuningLabels();
-            if( nEvent == EVENT_SLIDER_VALUE_CHANGED_UP )
-            {
-                CommitVoxelTuningFromUI();
-                g_CascadedShadow.InvalidateStaticVoxelization();
-            }
-        break;
-
-        case IDC_PCF_SIZE : 
-        {
-            INT PCFSize = g_HUD.GetSlider( IDC_PCF_SIZE )->GetValue();
-            PCFSize *= 2;
-            PCFSize -=1;
-            WCHAR desc[256];
-            swprintf_s( desc, L"PCF Blur: %d ", PCFSize ); 
-            g_HUD.GetStatic( IDC_PCF_SIZETEXT )->SetText( desc );
-            g_CascadedShadow.m_iPCFBlurSize = PCFSize;
-        }
-        break;
-        case IDC_PCF_OFFSET_SIZE : 
-        {
-            INT offset = g_HUD.GetSlider( IDC_PCF_OFFSET_SIZE )->GetValue();
-            FLOAT useoffset = ( FLOAT )offset * 0.001f;
-            WCHAR desc[256];
-            swprintf_s( desc, L" Offset: %0.03f", useoffset); 
-            g_HUD.GetStatic( IDC_PCF_OFFSET_SIZETEXT )->SetText( desc );
-            g_CascadedShadow.m_fPCFOffset= useoffset;
-        }
-        break;
-
-        case IDC_BLEND_BETWEEN_MAPS_CHECK : 
-            if( g_HUD.GetCheckBox( IDC_BLEND_BETWEEN_MAPS_CHECK )->GetChecked() )
-                g_CascadedShadow.m_iBlurBetweenCascades = 1;
-            else 
-                g_CascadedShadow.m_iBlurBetweenCascades = 0;
-        break;
-
-        case IDC_BLEND_MAPS_SLIDER : 
-        {
-            INT val = g_HUD.GetSlider( IDC_BLEND_MAPS_SLIDER )->GetValue();
-            g_CascadedShadow.m_fBlurBetweenCascadesAmount = (float)val * 0.005f;
-            WCHAR dta[256];
-            swprintf_s( dta, L"Cascade Blur %0.03f", g_CascadedShadow.m_fBlurBetweenCascadesAmount );
-            g_HUD.GetCheckBox( IDC_BLEND_BETWEEN_MAPS_CHECK )->SetText( dta );
-        }
-        break;
-
-        case IDC_TOGGLE_DERIVATIVE_OFFSET : 
-        {
-            if( g_CascadedShadow.m_iDerivativeBasedOffset == 0 )
-                g_CascadedShadow.m_iDerivativeBasedOffset = 1;
-            else 
-                g_CascadedShadow.m_iDerivativeBasedOffset = 0;
-                    
-        }
-        break;
-        case IDC_BUFFER_SIZE : 
-        {
-            INT value = 32 * g_HUD.GetSlider( IDC_BUFFER_SIZE )->GetValue();
-            INT max = 8192 / g_CascadeConfig.m_nCascadeLevels;
-            if( value > max ) 
-            { 
-                value = max;
-                g_HUD.GetSlider( IDC_BUFFER_SIZE )->SetValue( value / 32 );
-            }
-            WCHAR desc[256];
-            swprintf_s( desc, L"Texture Size: %d ", value ); 
-            g_HUD.GetStatic( IDC_BUFFER_SIZETEXT )->SetText( desc );
-
-            //Only tell the app to recreate buffers once the user is through moving the slider. 
-            if( nEvent == EVENT_SLIDER_VALUE_CHANGED_UP ) 
-            {
-                g_CascadeConfig.m_iBufferSize = value;
-            }
-        }
-        break;
-        case IDC_SELECTED_SCENE:
-        {
-            SCENE_SELECTION ss = (SCENE_SELECTION) PtrToUlong( g_SceneSelectCombo->GetSelectedData() );
-            if( ss == POWER_PLANT_SCENE ) 
-            {
-                g_pSelectedMesh = &g_MeshPowerPlant;
-            } 
-            else if (ss == TEST_SCENE ) 
-            { 
-                g_pSelectedMesh = &g_MeshTestScene;
-            }
-            else if (ss == SPONZA_SCENE )
-            {
-                g_pSelectedMesh = &g_MeshSponza;
-            }
-            EnsureSceneMeshLoaded( DXUTGetD3D11Device(), g_pSelectedMesh );
-            DestroyD3DComponents();
-            CreateD3DComponents( DXUTGetD3D11Device() );
-            UpdateViewerCameraNearFar();
-        }
-        case IDC_SELECTED_CAMERA:
-        {    
-            g_CascadedShadow.m_eSelectedCamera = ( CAMERA_SELECTION ) 
-                    ( g_CameraSelectCombo->GetSelectedIndex( ) );
-
-            if( g_CascadedShadow.m_eSelectedCamera < 1 ) 
-            {
-                g_pActiveCamera = &g_ViewerCamera;
-            }
-            else 
-            {
-                g_pActiveCamera = &g_LightCamera;
-            }
-        }
-        break;
-        case IDC_CASCADELEVELS:
-        {
-            INT ind = 1 + g_CascadeLevelsCombo->GetSelectedIndex( );
-            g_CascadeConfig.m_nCascadeLevels = ind;
-            for( INT index=0; index < ind; ++index ) 
-            {
-                g_HUD.GetStatic( IDC_CASCADELEVEL1TEXT + index )->SetVisible( true );
-                g_HUD.GetSlider( IDC_CASCADELEVEL1 + index )->SetVisible( true );
-            }
-            for( int index=ind; index < MAX_CASCADES; ++index ) 
-            {
-                g_HUD.GetStatic( IDC_CASCADELEVEL1TEXT + index )->SetVisible( false );
-                g_HUD.GetSlider( IDC_CASCADELEVEL1 + index )->SetVisible( false  );
-            }
-            INT value = 32 * g_HUD.GetSlider( IDC_BUFFER_SIZE )->GetValue();
-            INT max = 8192 / g_CascadeConfig.m_nCascadeLevels;
-            if( value > max ) 
-            {
-                WCHAR desc[256];
-                value = max;
-
-                swprintf_s( desc, L"Texture Size: %d ", value ); 
-                g_HUD.GetStatic( IDC_BUFFER_SIZETEXT )->SetText( desc );
-                g_HUD.GetSlider( IDC_BUFFER_SIZE )->SetValue( value / 32);
-                g_CascadeConfig.m_iBufferSize = value;
-            }
-            
-            // update the selected camera based on these changes.
-            INT selected = g_CameraSelectCombo->GetSelectedIndex();
-            WCHAR dta[60];
-            g_CameraSelectCombo->RemoveAllItems();
-            swprintf_s( dta, L"Eye Camera", EYE_CAMERA + 1 );
-            g_CameraSelectCombo->AddItem(dta, ULongToPtr( EYE_CAMERA ) );     
-            swprintf_s( dta, L"Light Camera", LIGHT_CAMERA + 1 );
-            g_CameraSelectCombo->AddItem(dta, ULongToPtr( LIGHT_CAMERA) );     
-            for( int index=0; index < g_CascadeConfig.m_nCascadeLevels; ++index) 
-            {
-                swprintf_s( dta, L"Cascade Cam %d", index + 1 );
-                g_CameraSelectCombo->AddItem( dta, ULongToPtr( ORTHO_CAMERA1+index ) );     
-            }
-            if( selected - 1 >= ind ) 
-            { 
-                selected = ind + 1;
-            }
-            g_CameraSelectCombo->SetSelectedByIndex ( selected );
-
-            g_CascadedShadow.m_eSelectedCamera = ( CAMERA_SELECTION ) 
-                    ( g_CameraSelectCombo->GetSelectedIndex() );
-
-            if( g_CascadedShadow.m_eSelectedCamera < 1 ) 
-            {
-                g_pActiveCamera = &g_ViewerCamera;
-            }
-            else 
-            {
-                g_pActiveCamera = &g_LightCamera;
-            }            
-        }
-        break;
-        case IDC_DEPTHBUFFERFORMAT:
-        {
-            SHADOW_TEXTURE_FORMAT sbt = (SHADOW_TEXTURE_FORMAT) PtrToUlong( g_DepthBufferFormatCombo->GetSelectedData() );
-            g_CascadeConfig.m_ShadowBufferFormat = sbt;
-        }
-        break;
-        case IDC_CASCADELEVEL1:
-        case IDC_CASCADELEVEL2:
-        case IDC_CASCADELEVEL3:
-        case IDC_CASCADELEVEL4:
-        case IDC_CASCADELEVEL5:
-        case IDC_CASCADELEVEL6:
-        case IDC_CASCADELEVEL7:
-        case IDC_CASCADELEVEL8:
-            {
-                INT ind = nControlID - IDC_CASCADELEVEL1;
-                INT move = g_HUD.GetSlider( nControlID )->GetValue();
-                CDXUTSlider* selecteSlider;
-                CDXUTStatic* selectedStatic;
-                WCHAR label[16];
-                for( int index=0; index < ind; ++index ) 
-                {
-                    selecteSlider = g_HUD.GetSlider( IDC_CASCADELEVEL1 + index );
-                    INT sVal = selecteSlider->GetValue();
-                    if( move < sVal ) 
-                    {
-                        selecteSlider->SetValue( move );
-                        selectedStatic = g_HUD.GetStatic( IDC_CASCADELEVEL1TEXT + index );
-                        swprintf_s( label, L"L%d: %d", index+1, move );
-                        selectedStatic->SetText( label );
-                        g_CascadedShadow.m_iCascadePartitionsZeroToOne[index] = move;
-                    }
-                }
-                for ( int index=ind; index < MAX_CASCADES; ++index ) 
-                {
-                    selecteSlider = g_HUD.GetSlider( IDC_CASCADELEVEL1 + index );
-                    INT sVal = selecteSlider->GetValue();
-                    if( move >= sVal ) 
-                    {
-                        selecteSlider->SetValue( move );
-                        selectedStatic = g_HUD.GetStatic( IDC_CASCADELEVEL1TEXT + index );
-                        swprintf_s( label, L"L%d: %d", index+1, move );
-                        selectedStatic->SetText( label );
-                        g_CascadedShadow.m_iCascadePartitionsZeroToOne[index] = move;
-                    }
-                }
-
-
-            }
-        break;
+        SyncGuiPanelsToRuntime();
+        UpdateGuiPanelVisibility();
     }
-
 }
 
 
@@ -1047,10 +696,15 @@ HRESULT CALLBACK OnD3D11ResizedSwapChain( ID3D11Device* pd3dDevice, IDXGISwapCha
 
     UpdateViewerCameraNearFar();
         
-    g_HUD.SetLocation( pBackBufferSurfaceDesc->Width - 170, 0 );
-    g_HUD.SetSize( 170, 170 );
-    g_SampleUI.SetLocation( pBackBufferSurfaceDesc->Width - 170, pBackBufferSurfaceDesc->Height - 300 );
-    g_SampleUI.SetSize( 170, 300 );
+    g_SelectorPanel.SetLocation( pBackBufferSurfaceDesc->Width - 220, 175 );
+    g_SelectorPanel.SetSize( 210, 55 );
+    g_DebugPanel.SetLocation( pBackBufferSurfaceDesc->Width - 220, 235 );
+    g_DebugPanel.SetSize( 210, 28 );
+    g_VoxelPanel.SetLocation( pBackBufferSurfaceDesc->Width - 220, 235 );
+    g_VoxelPanel.SetSize( 210, 190 );
+    g_ShadowPanel.SetLocation( pBackBufferSurfaceDesc->Width - 220, 235 );
+    g_ShadowPanel.SetSize( 210, 245 );
+    UpdateGuiPanelVisibility();
 
     return S_OK;
 }
@@ -1103,7 +757,10 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
 
     g_CascadedShadow.RenderVoxelization(pd3dImmediateContext, g_pSelectedMesh, g_pActiveCamera);
     g_CascadedShadow.RenderVisualizeVoxelization(pd3dImmediateContext, pRTV, pDSV, g_pSelectedMesh, &vp, g_pActiveCamera,g_bVisualizeVoxel);
-    g_CascadedShadow.RenderDebug(pd3dImmediateContext, pRTV, pDSV, &vp,g_bDebugCascades);
+    g_CascadedShadow.RenderDebug(pd3dImmediateContext, pRTV, pDSV, &vp);
+
+    SyncGuiPanelsFromRuntime();
+    UpdateGuiPanelVisibility();
 
 
     pd3dImmediateContext->RSSetViewports( 1, &vp);            
@@ -1111,8 +768,8 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
 
     DXUT_BeginPerfEvent( DXUT_PERFEVENTCOLOR, L"HUD / Stats" );
 
-    g_HUD.OnRender( fElapsedTime );
-    g_SampleUI.OnRender( fElapsedTime );
+    RenderRuntimeGuiPanels( fElapsedTime );
     RenderText();
     DXUT_EndPerfEvent();
 }
+
