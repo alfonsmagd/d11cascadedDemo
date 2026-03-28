@@ -12,3 +12,6 @@ The voxel volume is generated through a VS + GS + PS pipeline. Scene geometry is
 
 
 <img width="2546" height="1087" alt="image" src="https://github.com/user-attachments/assets/9352f5b9-a326-49b4-b4a8-f5edf7e35194" />
+
+
+This implementation is built on top of the DirectX 11 sample browser examples in order to enable rapid prototyping and iteration. Therefore, the codebase is primarily intended for educational and experimental purposes, and should not be considered production-ready.
