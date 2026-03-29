@@ -40,6 +40,7 @@ SDKSceneMesh                g_MeshPowerPlant( L"powerplant\\powerplant.sdkmesh" 
 SDKSceneMesh                g_MeshTestScene( L"ShadowColumns\\testscene.sdkmesh" );
 OBJSceneMesh                g_MeshSponza( L"sponza\\sponza.obj", 0.05f );
 ISceneMesh*                 g_pSelectedMesh = &g_MeshPowerPlant;                
+SCENE_SELECTION             g_eSelectedScene = POWER_PLANT_SCENE;
 
 // DXUT GUI stuff
 CD3DSettingsDlg             g_D3DSettingsDlg;       // Device settings dialog
@@ -131,9 +132,11 @@ float                       g_fDepthScale;
 #define IDC_GUI_FIT_TO_CASCADE_TEXT   57
 #define IDC_GUI_FIT_TO_NEARFAR_TEXT   58
 #define IDC_GUI_CASCADE_SELECT_TEXT   59
+#define IDC_GUI_SCENE_TEXT            60
+#define IDC_GUI_SCENE_COMBO           61
 
-Gui_SelectorPanelState      g_SelectorGuiState = { GUI_PANEL_CATEGORY_DEBUG };
-Gui_SelectorPanelIds        g_SelectorPanelIds = { IDC_GUI_CATEGORY_TEXT, IDC_GUI_CATEGORY_COMBO };
+Gui_SelectorPanelState      g_SelectorGuiState = { GUI_PANEL_CATEGORY_DEBUG, POWER_PLANT_SCENE };
+Gui_SelectorPanelIds        g_SelectorPanelIds = { IDC_GUI_CATEGORY_TEXT, IDC_GUI_CATEGORY_COMBO, IDC_GUI_SCENE_TEXT, IDC_GUI_SCENE_COMBO };
 Gui_SelectorPanel           g_SelectorPanel( g_SelectorPanelIds, g_SelectorGuiState );
 Gui_DebugPanelState         g_DebugGuiState = {};
 Gui_DebugPanelIds           g_DebugPanelIds = { IDC_TOGGLE_DEBUG_CASCADES };
@@ -187,7 +190,7 @@ Gui_VoxelPanelIds           g_VoxelPanelIds =
     IDC_VOXEL_TOP_COVERAGE
 };
 Gui_VoxelPanel              g_VoxelPanel( g_VoxelPanelIds, g_VoxelGuiState );
-GuiRuntimeContext           g_GuiRuntimeContext = { &g_CascadedShadow, &g_CascadeConfig, &g_bVisualizeCascades, &g_bVisualizeVoxel, &g_bMoveLightTexelSize, &g_pActiveCamera, &g_ViewerCamera, &g_LightCamera };
+GuiRuntimeContext           g_GuiRuntimeContext = { &g_CascadedShadow, &g_CascadeConfig, &g_bVisualizeCascades, &g_bVisualizeVoxel, &g_bMoveLightTexelSize, &g_eSelectedScene, &g_pActiveCamera, &g_ViewerCamera, &g_LightCamera };
 std::vector<GuiPanelBase*>  g_AllGuiPanels;
 
 //--------------------------------------------------------------------------------------
@@ -224,6 +227,7 @@ void RenderRuntimeGuiPanels( FLOAT fElapsedTime );
 void UpdateGuiPanelVisibility();
 void ResetSceneCameras();
 HRESULT EnsureSceneMeshLoaded( ID3D11Device* pd3dDevice, ISceneMesh* pMesh );
+HRESULT ApplySceneSelectionChange();
 
 void RegisterAllGuiPanels()
 {
@@ -313,17 +317,7 @@ void UpdateGuiPanelVisibility()
 
 static SCENE_SELECTION GetCurrentSceneSelection()
 {
-    if( g_pSelectedMesh == &g_MeshTestScene )
-    {
-        return TEST_SCENE;
-    }
-
-    if( g_pSelectedMesh == &g_MeshSponza )
-    {
-        return SPONZA_SCENE;
-    }
-
-    return POWER_PLANT_SCENE;
+    return g_eSelectedScene;
 }
 
 HRESULT EnsureSceneMeshLoaded( ID3D11Device* pd3dDevice, ISceneMesh* pMesh )
@@ -334,6 +328,40 @@ HRESULT EnsureSceneMeshLoaded( ID3D11Device* pd3dDevice, ISceneMesh* pMesh )
     }
 
     return pMesh->Create( pd3dDevice, DXUTGetD3D11DeviceContext() );
+}
+
+HRESULT ApplySceneSelectionChange()
+{
+    HRESULT hr = S_OK;
+    ISceneMesh* pNewMesh = &g_MeshPowerPlant;
+
+    switch( g_eSelectedScene )
+    {
+        case TEST_SCENE:
+            pNewMesh = &g_MeshTestScene;
+        break;
+
+        case SPONZA_SCENE:
+            pNewMesh = &g_MeshSponza;
+        break;
+
+        case POWER_PLANT_SCENE:
+        default:
+            pNewMesh = &g_MeshPowerPlant;
+        break;
+    }
+
+    if( g_pSelectedMesh == pNewMesh )
+    {
+        return S_OK;
+    }
+
+    g_pSelectedMesh = pNewMesh;
+    V_RETURN( EnsureSceneMeshLoaded( DXUTGetD3D11Device(), g_pSelectedMesh ) );
+    g_pActiveCamera = &g_ViewerCamera;
+    ResetSceneCameras();
+    g_CascadedShadow.InvalidateStaticVoxelization();
+    return S_OK;
 }
 
 void ResetSceneCameras()
@@ -589,6 +617,7 @@ void CALLBACK OnGUIEvent( UINT nEvent, INT nControlID, CDXUTControl* pControl, v
     if( HandleRuntimeGuiPanelEvent( nEvent, nControlID ) )
     {
         SyncGuiPanelsToRuntime();
+        ApplySceneSelectionChange();
         UpdateGuiPanelVisibility();
     }
 }
@@ -696,13 +725,13 @@ HRESULT CALLBACK OnD3D11ResizedSwapChain( ID3D11Device* pd3dDevice, IDXGISwapCha
 
     UpdateViewerCameraNearFar();
         
-    g_SelectorPanel.SetLocation( pBackBufferSurfaceDesc->Width - 220, 175 );
-    g_SelectorPanel.SetSize( 210, 55 );
-    g_DebugPanel.SetLocation( pBackBufferSurfaceDesc->Width - 220, 235 );
+    g_SelectorPanel.SetLocation( 10, 10 );
+    g_SelectorPanel.SetSize( 210, 110 );
+    g_DebugPanel.SetLocation( 10, 125 );
     g_DebugPanel.SetSize( 210, 28 );
-    g_VoxelPanel.SetLocation( pBackBufferSurfaceDesc->Width - 220, 235 );
+    g_VoxelPanel.SetLocation( 10, 125 );
     g_VoxelPanel.SetSize( 210, 190 );
-    g_ShadowPanel.SetLocation( pBackBufferSurfaceDesc->Width - 220, 235 );
+    g_ShadowPanel.SetLocation( 10, 125 );
     g_ShadowPanel.SetSize( 210, 245 );
     UpdateGuiPanelVisibility();
 

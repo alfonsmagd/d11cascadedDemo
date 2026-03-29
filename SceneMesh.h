@@ -12,6 +12,15 @@
 #include "SDKMesh.h"
 #include "SDKmisc.h"
 
+
+
+struct BoundingBox
+{
+    XMFLOAT3 corners[8];
+    XMFLOAT4 color;
+};
+
+
 class ISceneMesh
 {
 public:
@@ -26,6 +35,7 @@ public:
         UINT iSpecularSlot = INVALID_SAMPLER_SLOT) = 0;
     virtual XMVECTOR GetAABBMin() const = 0;
     virtual XMVECTOR GetAABBMax() const = 0;
+    virtual void UpdateGlobalBoundingBox(std::vector<BoundingBox>& globalBoundingBoxes) const = 0;
 };
 
 class SDKSceneMesh : public ISceneMesh
@@ -69,6 +79,8 @@ public:
             m_vAABBMax.y = max(m_vAABBMax.y, meshMax.y);
             m_vAABBMax.z = max(m_vAABBMax.z, meshMax.z);
         }
+        GetBoundingBox();
+      
 
         m_bLoaded = true;
         return S_OK;
@@ -104,6 +116,31 @@ public:
         return XMVectorSet(m_vAABBMax.x, m_vAABBMax.y, m_vAABBMax.z, 1.0f);
     }
 
+    BoundingBox GetBoundingBox() 
+    {
+        BoundingBox& box = m_SceneBounding;
+        box.color = XMFLOAT4(1, 0, 1, 1);
+        box.corners[0] = XMFLOAT3(m_vAABBMin.x, m_vAABBMin.y, m_vAABBMin.z);
+        box.corners[1] = XMFLOAT3(m_vAABBMax.x, m_vAABBMin.y, m_vAABBMin.z);
+        box.corners[2] = XMFLOAT3(m_vAABBMax.x, m_vAABBMax.y, m_vAABBMin.z);
+        box.corners[3] = XMFLOAT3(m_vAABBMin.x, m_vAABBMax.y, m_vAABBMin.z);
+        box.corners[4] = XMFLOAT3(m_vAABBMin.x, m_vAABBMin.y, m_vAABBMax.z);
+        box.corners[5] = XMFLOAT3(m_vAABBMax.x, m_vAABBMin.y, m_vAABBMax.z);
+        box.corners[6] = XMFLOAT3(m_vAABBMax.x, m_vAABBMax.y, m_vAABBMax.z);
+        box.corners[7] = XMFLOAT3(m_vAABBMin.x, m_vAABBMax.y, m_vAABBMax.z);
+        return box;
+    }
+
+    const BoundingBox& GetBoundingBox() const
+    {
+        return m_SceneBounding;
+    }
+
+    void UpdateGlobalBoundingBox(std::vector<BoundingBox>& globalBoundingBoxes) const override
+    {
+        globalBoundingBoxes.push_back(GetBoundingBox());
+    }
+
 private:
     void ResetBounds()
     {
@@ -116,6 +153,7 @@ private:
     CDXUTSDKMesh    m_Mesh;
     D3DXVECTOR3     m_vAABBMin;
     D3DXVECTOR3     m_vAABBMax;
+    BoundingBox     m_SceneBounding;
 };
 
 class OBJSceneMesh : public ISceneMesh
@@ -131,6 +169,24 @@ public:
     {
         ResetBounds();
     }
+
+
+    void UpdateGlobalBoundingBox(std::vector<BoundingBox>& globalBoundingBoxes) const override
+    {
+        BoundingBox box = {};
+        box.color = XMFLOAT4( 1, 0, 1, 1 );
+        box.corners[0] = XMFLOAT3( m_vAABBMin.x, m_vAABBMin.y, m_vAABBMin.z );
+        box.corners[1] = XMFLOAT3( m_vAABBMax.x, m_vAABBMin.y, m_vAABBMin.z );
+        box.corners[2] = XMFLOAT3( m_vAABBMax.x, m_vAABBMax.y, m_vAABBMin.z );
+        box.corners[3] = XMFLOAT3( m_vAABBMin.x, m_vAABBMax.y, m_vAABBMin.z );
+        box.corners[4] = XMFLOAT3( m_vAABBMin.x, m_vAABBMin.y, m_vAABBMax.z );
+        box.corners[5] = XMFLOAT3( m_vAABBMax.x, m_vAABBMin.y, m_vAABBMax.z );
+        box.corners[6] = XMFLOAT3( m_vAABBMax.x, m_vAABBMax.y, m_vAABBMax.z );
+        box.corners[7] = XMFLOAT3( m_vAABBMin.x, m_vAABBMax.y, m_vAABBMax.z );
+        globalBoundingBoxes.push_back( box );
+    }
+
+
 
     HRESULT Create(ID3D11Device* pd3dDevice, ID3D11DeviceContext* pd3dDeviceContext) override
     {

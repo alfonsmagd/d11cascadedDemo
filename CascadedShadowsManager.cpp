@@ -228,6 +228,52 @@ HRESULT CascadedShadowsManager::EnsureRenderScenePixelShader(ID3D11Device* pd3dD
     return hr;
 }
 
+HRESULT CascadedShadowsManager::UpdateBoundingBoxBuffer( ID3D11Device* pd3dDevice, const ISceneMesh* pMesh )
+{
+    HRESULT hr = S_OK;
+
+    m_SceneBoundingBoxes.clear();
+    m_nBoundingBoxes = 0;
+
+    if( pMesh )
+    {
+        pMesh->UpdateGlobalBoundingBox( m_SceneBoundingBoxes );
+    }
+
+    SAFE_RELEASE( m_pBoundingBoxSRV );
+    SAFE_RELEASE( m_pBoundingBoxBuffer );
+
+    if( m_SceneBoundingBoxes.empty() )
+    {
+        return S_OK;
+    }
+
+    D3D11_BUFFER_DESC boxBufferDesc = {};
+    boxBufferDesc.ByteWidth = UINT( sizeof( BoundingBox ) * m_SceneBoundingBoxes.size() );
+    boxBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+    boxBufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    boxBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+    boxBufferDesc.StructureByteStride = sizeof( BoundingBox );
+
+    D3D11_SUBRESOURCE_DATA boxBufferData = {};
+    boxBufferData.pSysMem = m_SceneBoundingBoxes.data();
+
+    V_RETURN( pd3dDevice->CreateBuffer( &boxBufferDesc, &boxBufferData, &m_pBoundingBoxBuffer ) );
+    DXUT_SetDebugName( m_pBoundingBoxBuffer, "SceneBoundingBoxBuffer" );
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC boxSRVDesc = {};
+    boxSRVDesc.Format = DXGI_FORMAT_UNKNOWN;
+    boxSRVDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+    boxSRVDesc.Buffer.FirstElement = 0;
+    boxSRVDesc.Buffer.NumElements = UINT( m_SceneBoundingBoxes.size() );
+
+    V_RETURN( pd3dDevice->CreateShaderResourceView( m_pBoundingBoxBuffer, &boxSRVDesc, &m_pBoundingBoxSRV ) );
+    DXUT_SetDebugName( m_pBoundingBoxSRV, "SceneBoundingBoxSRV" );
+
+    m_nBoundingBoxes = UINT( m_SceneBoundingBoxes.size() );
+    return hr;
+}
+
 
 //--------------------------------------------------------------------------------------
 // Call into deallocator.  
@@ -286,6 +332,7 @@ HRESULT CascadedShadowsManager::Init(ID3D11Device* pd3dDevice,
     m_vDynamicVoxelAABBMin = m_vSceneAABBMin;
     m_vDynamicVoxelAABBMax = m_vSceneAABBMax;
     m_bStaticVoxelizationDirty = true;
+    V_RETURN( UpdateBoundingBoxBuffer( pd3dDevice, pMesh ) );
 
     m_pViewerCamera = pViewerCamera;
     m_pLightCamera = pLightCamera;
@@ -433,22 +480,36 @@ HRESULT CascadedShadowsManager::Init(ID3D11Device* pd3dDevice,
     V_RETURN(pd3dDevice->CreateBuffer(&voxelDrawArgsDesc, &voxelDrawArgsData, &m_pVoxelDrawArgsBuffer));
     DXUT_SetDebugName(m_pVoxelDrawArgsBuffer, "VoxelDrawArgs");
 
-    D3D11_RASTERIZER_DESC drd =
-    {
-        D3D11_FILL_SOLID,//D3D11_FILL_MODE FillMode;
-        D3D11_CULL_NONE,//D3D11_CULL_MODE CullMode;
-        FALSE,//BOOL FrontCounterClockwise;
-        0,//INT DepthBias;
-        0.0,//FLOAT DepthBiasClamp;
-        0.0,//FLOAT SlopeScaledDepthBias;
-        TRUE,//BOOL DepthClipEnable;
-        FALSE,//BOOL ScissorEnable;
-        TRUE,//BOOL MultisampleEnable;
-        FALSE//BOOL AntialiasedLineEnable;   
-    };
+
+    // Bounding Box
+
+    D3D11_RASTERIZER_DESC drd = {};
+    drd.FillMode = D3D11_FILL_SOLID;
+    drd.CullMode = D3D11_CULL_NONE;
+    drd.FrontCounterClockwise = FALSE;
+    drd.DepthBias = 0;
+    drd.DepthBiasClamp = 0.0f;
+    drd.SlopeScaledDepthBias = 0.0f;
+    drd.DepthClipEnable = TRUE;
+    drd.ScissorEnable = FALSE;
+    drd.MultisampleEnable = TRUE;
+    drd.AntialiasedLineEnable = FALSE;
 
     pd3dDevice->CreateRasterizerState(&drd, &m_prsScene);
     DXUT_SetDebugName(m_prsScene, "CSM Scene");
+
+    // Match the original cascade behavior: no culling for scene/light orthographic views.
+    drd.SlopeScaledDepthBias = 1.0;
+    pd3dDevice->CreateRasterizerState(&drd, &m_prsShadow);
+    DXUT_SetDebugName(m_prsShadow, "CSM Shadow");
+    drd.DepthClipEnable = false;
+    pd3dDevice->CreateRasterizerState(&drd, &m_prsShadowPancake);
+    DXUT_SetDebugName(m_prsShadowPancake, "CSM Pancake");
+
+    drd.CullMode = D3D11_CULL_BACK;
+    drd.ScissorEnable = TRUE;
+    drd.SlopeScaledDepthBias = 0.0f;
+    drd.DepthClipEnable = TRUE;
 
     drd.DepthClipEnable = FALSE;
     drd.MultisampleEnable = FALSE;
@@ -474,15 +535,6 @@ HRESULT CascadedShadowsManager::Init(ID3D11Device* pd3dDevice,
     V_RETURN(pd3dDevice->CreateBlendState(&blendDesc, &m_pbsVoxelVisualize));
     DXUT_SetDebugName(m_pbsVoxelVisualize, "VoxelVisualize_Blend");
 
-
-    // Setting the slope scale depth biase greatly decreases surface acne and incorrect self shadowing.
-    drd.DepthClipEnable = TRUE;
-    drd.SlopeScaledDepthBias = 1.0;
-    pd3dDevice->CreateRasterizerState(&drd, &m_prsShadow);
-    DXUT_SetDebugName(m_prsShadow, "CSM Shadow");
-    drd.DepthClipEnable = false;
-    pd3dDevice->CreateRasterizerState(&drd, &m_prsShadowPancake);
-    DXUT_SetDebugName(m_prsShadowPancake, "CSM Pancake");
 
     D3D11_BUFFER_DESC Desc;
     Desc.Usage = D3D11_USAGE_DYNAMIC;
@@ -533,6 +585,10 @@ HRESULT CascadedShadowsManager::DestroyAndDeallocateShadowResources()
     SAFE_RELEASE(m_pCascadedShadowMapTexture);
     SAFE_RELEASE(m_pCascadedShadowMapDSV);
     SAFE_RELEASE(m_pCascadedShadowMapSRV);
+    SAFE_RELEASE(m_pBoundingBoxBuffer);
+    SAFE_RELEASE(m_pBoundingBoxSRV);
+    m_SceneBoundingBoxes.clear();
+    m_nBoundingBoxes = 0;
 
     SAFE_RELEASE(m_pVoxelAlbedoTex);
     SAFE_RELEASE(m_pVoxelAlbedoUAV);
@@ -1203,6 +1259,26 @@ void CascadedShadowsManager::CreateAABBPoints(XMVECTOR* vAABBPoints, FXMVECTOR v
 //--------------------------------------------------------------------------------------
 HRESULT CascadedShadowsManager::InitFrame(ID3D11Device* pd3dDevice, ISceneMesh* mesh)
 {
+    HRESULT hr = S_OK;
+
+    const XMVECTOR vMeshAABBMin = mesh ? mesh->GetAABBMin() : m_vSceneAABBMin;
+    const XMVECTOR vMeshAABBMax = mesh ? mesh->GetAABBMax() : m_vSceneAABBMax;
+    const bool sceneBoundsChanged =
+        XMVector4NotEqual( vMeshAABBMin, m_vSceneAABBMin ) ||
+        XMVector4NotEqual( vMeshAABBMax, m_vSceneAABBMax );
+
+    if( sceneBoundsChanged )
+    {
+        m_vSceneAABBMin = vMeshAABBMin;
+        m_vSceneAABBMax = vMeshAABBMax;
+        m_vStaticVoxelAABBMin = m_vSceneAABBMin;
+        m_vStaticVoxelAABBMax = m_vSceneAABBMax;
+        m_vDynamicVoxelAABBMin = m_vSceneAABBMin;
+        m_vDynamicVoxelAABBMax = m_vSceneAABBMax;
+        m_bStaticVoxelizationDirty = true;
+        V_RETURN( UpdateBoundingBoxBuffer( pd3dDevice, mesh ) );
+    }
+
 
     ReleaseAndAllocateNewShadowResources(pd3dDevice);
 

@@ -13,6 +13,8 @@
 #define _CASCADE_SHADOWS_H_
 
 #include "ShadowSampleMisc.h"
+#include "SceneMesh.h"
+#include <vector>
 
 class CFirstPersonCamera;
 class ISceneMesh;
@@ -127,6 +129,7 @@ private:
     HRESULT ReleaseAndAllocateNewShadowResources( ID3D11Device* pd3dDevice );  // This is called when cascade config changes. 
     HRESULT EnsureRenderSceneVertexShader(ID3D11Device* pd3dDevice, INT cascadeIndex);
     HRESULT EnsureRenderScenePixelShader(ID3D11Device* pd3dDevice, INT cascadeIndex, INT derivativeIndex, INT blendIndex, INT intervalIndex);
+    HRESULT UpdateBoundingBoxBuffer( ID3D11Device* pd3dDevice, const ISceneMesh* pMesh );
     HRESULT RenderVoxelizationVolume(ID3D11DeviceContext* pd3dDeviceContext,
         ISceneMesh* pMesh,
         FXMVECTOR vVoxelMin,
@@ -188,6 +191,8 @@ private:
     ID3D11Texture2D*                    m_pCascadedShadowMapTexture ;
     ID3D11DepthStencilView*             m_pCascadedShadowMapDSV ;
     ID3D11ShaderResourceView*           m_pCascadedShadowMapSRV ;
+    std::vector<BoundingBox>            m_SceneBoundingBoxes;
+    UINT                                m_nBoundingBoxes = 0;
 
 
     ID3D11Texture3D*                    m_pVoxelAlbedoTex = nullptr;
@@ -216,6 +221,9 @@ private:
 #if  TEXTURE_2D_SHADOWMAP 
 	ID3D11Texture2D*                    m_pCascadedShadowMapTextureArray;
 #endif
+
+    ID3D11Buffer*                       m_pBoundingBoxBuffer = nullptr;
+    ID3D11ShaderResourceView*           m_pBoundingBoxSRV = nullptr;
 
     ID3D11Buffer*                       m_pcbVoxelParams;
     ID3D11Buffer*                       m_pcbVisualizeVoxels = nullptr;

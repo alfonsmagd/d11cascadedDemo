@@ -4,6 +4,7 @@
 
 class CascadedShadowsManager;
 class CFirstPersonCamera;
+class ISceneMesh;
 
 struct GuiRuntimeContext
 {
@@ -12,6 +13,7 @@ struct GuiRuntimeContext
     bool* pVisualizeCascades;
     bool* pVisualizeVoxel;
     bool* pMoveLightTexelSize;
+    SCENE_SELECTION* pSelectedScene;
     CFirstPersonCamera** ppActiveCamera;
     CFirstPersonCamera* pViewerCamera;
     CFirstPersonCamera* pLightCamera;
