@@ -283,6 +283,8 @@ CascadedShadowsManager::~CascadedShadowsManager()
     DestroyAndDeallocateShadowResources();
     SAFE_RELEASE(m_pvsDebugBlob);
     SAFE_RELEASE(m_ppsDebugBlob);
+    SAFE_RELEASE(m_pvsDebugBoundingBoxBlob);
+    SAFE_RELEASE(m_ppsDebugBoundingBoxBlob);
     SAFE_RELEASE(m_pvsVisualizeVoxelizationBlob);
     SAFE_RELEASE(m_ppsVisualizeVoxelizationBlob);
     SAFE_RELEASE(m_pvsRenderOrthoShadowBlob);
@@ -350,6 +352,11 @@ HRESULT CascadedShadowsManager::Init(ID3D11Device* pd3dDevice,
         V_RETURN(CompileShaderFromFile(L"Debug.hlsl", NULL, "PSMain", m_cpsModel, &m_ppsDebugBlob));
 
     }
+    if( m_pvsDebugBoundingBox == NULL && m_ppsDebugBoundingBox == NULL )
+    {
+        V_RETURN( CompileShaderFromFile( L"DebugBoundingBox.hlsl", NULL, "VSMain", m_cvsModel, &m_pvsDebugBoundingBoxBlob ) );
+        V_RETURN( CompileShaderFromFile( L"DebugBoundingBox.hlsl", NULL, "PSMain", m_cpsModel, &m_ppsDebugBoundingBoxBlob ) );
+    }
     if (m_pvsVisualizeVoxelization == NULL && m_ppsVisualizeVoxelization == NULL)
     {
         V_RETURN(CompileShaderFromFile(L"VisualizeVoxelization.hlsl", NULL, "VSMain", m_cvsModel, &m_pvsVisualizeVoxelizationBlob));
@@ -368,6 +375,14 @@ HRESULT CascadedShadowsManager::Init(ID3D11Device* pd3dDevice,
     V_RETURN(pd3dDevice->CreatePixelShader(
         m_ppsDebugBlob->GetBufferPointer(), m_ppsDebugBlob->GetBufferSize(), NULL, &m_ppsDebug));
     DXUT_SetDebugName(m_ppsDebug, "Debug_ps");
+
+    V_RETURN( pd3dDevice->CreateVertexShader(
+        m_pvsDebugBoundingBoxBlob->GetBufferPointer(), m_pvsDebugBoundingBoxBlob->GetBufferSize(), NULL, &m_pvsDebugBoundingBox ) );
+    DXUT_SetDebugName( m_pvsDebugBoundingBox, "DebugBoundingBox_vs" );
+
+    V_RETURN( pd3dDevice->CreatePixelShader(
+        m_ppsDebugBoundingBoxBlob->GetBufferPointer(), m_ppsDebugBoundingBoxBlob->GetBufferSize(), NULL, &m_ppsDebugBoundingBox ) );
+    DXUT_SetDebugName( m_ppsDebugBoundingBox, "DebugBoundingBox_ps" );
 
     V_RETURN(pd3dDevice->CreateVertexShader(
         m_pvsVisualizeVoxelizationBlob->GetBufferPointer(), m_pvsVisualizeVoxelizationBlob->GetBufferSize(), NULL, &m_pvsVisualizeVoxelization));
@@ -628,6 +643,8 @@ HRESULT CascadedShadowsManager::DestroyAndDeallocateShadowResources()
 
     SAFE_RELEASE(m_pvsDebug);
     SAFE_RELEASE(m_ppsDebug);
+    SAFE_RELEASE(m_pvsDebugBoundingBox);
+    SAFE_RELEASE(m_ppsDebugBoundingBox);
     SAFE_RELEASE(m_pvsVisualizeVoxelization);
     SAFE_RELEASE(m_ppsVisualizeVoxelization);
 
@@ -1731,11 +1748,30 @@ HRESULT CascadedShadowsManager::RenderScene(ID3D11DeviceContext* pd3dDeviceConte
 
 HRESULT CascadedShadowsManager::RenderDebug(ID3D11DeviceContext* pd3dDeviceContext, ID3D11RenderTargetView* prtvBackBuffer, ID3D11DepthStencilView* pdsvBackBuffer, D3D11_VIEWPORT* dxutViewPort)
 {
-    if( !m_bRenderDebug )
+    if( !m_bRenderDebug && !m_bRenderDebugBoundingBox )
     {
         return S_OK;
     }
 
+    HRESULT hr = S_OK;
+
+    if( m_bRenderDebugBoundingBox )
+    {
+        V_RETURN( RenderDebugBoundingBoxes( pd3dDeviceContext, prtvBackBuffer, pdsvBackBuffer, dxutViewPort ) );
+    }
+
+    if( m_bRenderDebug )
+    {
+        V_RETURN( RenderDebugShadowOverlay( pd3dDeviceContext, prtvBackBuffer, dxutViewPort ) );
+    }
+
+    return hr;
+}
+
+HRESULT CascadedShadowsManager::RenderDebugShadowOverlay( ID3D11DeviceContext* pd3dDeviceContext,
+    ID3D11RenderTargetView* prtvBackBuffer,
+    D3D11_VIEWPORT* dxutViewPort )
+{
     HRESULT hr = S_OK;
 
     // 1/4 screen viewport.
@@ -1775,6 +1811,58 @@ HRESULT CascadedShadowsManager::RenderDebug(ID3D11DeviceContext* pd3dDeviceConte
     ID3D11ShaderResourceView* nullSRV[1] = { NULL };
     pd3dDeviceContext->PSSetShaderResources(0, 1, nullSRV);
 
+    return hr;
+}
+
+HRESULT CascadedShadowsManager::RenderDebugBoundingBoxes( ID3D11DeviceContext* pd3dDeviceContext,
+    ID3D11RenderTargetView* prtvBackBuffer,
+    ID3D11DepthStencilView* pdsvBackBuffer,
+    D3D11_VIEWPORT* dxutViewPort )
+{
+    HRESULT hr = S_OK;
+
+    if( !m_pBoundingBoxSRV || m_nBoundingBoxes == 0 || !m_pvsDebugBoundingBox || !m_ppsDebugBoundingBox )
+    {
+        return S_OK;
+    }
+
+    D3DXMATRIX dxmatCameraProj = *m_pViewerCamera->GetProjMatrix();
+    D3DXMATRIX dxmatCameraView = *m_pViewerCamera->GetViewMatrix();
+
+    if( m_eSelectedCamera == LIGHT_CAMERA )
+    {
+        dxmatCameraProj = *m_pLightCamera->GetProjMatrix();
+        dxmatCameraView = *m_pLightCamera->GetViewMatrix();
+    }
+    else if( m_eSelectedCamera >= ORTHO_CAMERA1 )
+    {
+        dxmatCameraProj = m_matShadowProj[(int)m_eSelectedCamera - 2];
+        dxmatCameraView = m_matShadowView;
+    }
+
+    D3DXMATRIX dxmatWorldViewProjection = dxmatCameraView * dxmatCameraProj;
+
+    D3D11_MAPPED_SUBRESOURCE mappedResource;
+    V_RETURN( pd3dDeviceContext->Map( m_pcbGlobalConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource ) );
+    CB_ALL_SHADOW_DATA* pcbAllShadowConstants = (CB_ALL_SHADOW_DATA*)mappedResource.pData;
+    D3DXMatrixTranspose( &pcbAllShadowConstants->m_WorldViewProj, &dxmatWorldViewProjection );
+    pd3dDeviceContext->Unmap( m_pcbGlobalConstantBuffer, 0 );
+
+    pd3dDeviceContext->RSSetState( m_prsScene );
+    pd3dDeviceContext->OMSetRenderTargets( 1, &prtvBackBuffer, pdsvBackBuffer );
+    pd3dDeviceContext->RSSetViewports( 1, dxutViewPort );
+    pd3dDeviceContext->IASetInputLayout( NULL );
+    pd3dDeviceContext->IASetPrimitiveTopology( D3D11_PRIMITIVE_TOPOLOGY_LINELIST );
+    pd3dDeviceContext->GSSetShader( NULL, NULL, 0 );
+    pd3dDeviceContext->VSSetShader( m_pvsDebugBoundingBox, NULL, 0 );
+    pd3dDeviceContext->PSSetShader( m_ppsDebugBoundingBox, NULL, 0 );
+    pd3dDeviceContext->VSSetConstantBuffers( 0, 1, &m_pcbGlobalConstantBuffer );
+    pd3dDeviceContext->VSSetShaderResources( 0, 1, &m_pBoundingBoxSRV );
+
+    pd3dDeviceContext->DrawInstanced( 24, m_nBoundingBoxes, 0, 0 );
+
+    ID3D11ShaderResourceView* nullSRV[1] = { NULL };
+    pd3dDeviceContext->VSSetShaderResources( 0, 1, nullSRV );
 
     return hr;
 }

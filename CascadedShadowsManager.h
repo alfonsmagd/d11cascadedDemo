@@ -74,6 +74,8 @@ public:
     void InvalidateStaticVoxelization() { m_bStaticVoxelizationDirty = true; }
     void SetRenderDebugEnabled( bool enabled ) { m_bRenderDebug = enabled; }
     bool IsRenderDebugEnabled() const { return m_bRenderDebug; }
+    void SetRenderDebugBoundingBoxEnabled( bool enabled ) { m_bRenderDebugBoundingBox = enabled; }
+    bool IsRenderDebugBoundingBoxEnabled() const { return m_bRenderDebugBoundingBox; }
 
     FLOAT                               m_fStaticVoxelHeightWarp = 0.55f;
     FLOAT                               m_fVoxelVisualizeSurfaceSnap = 0.22f;
@@ -130,6 +132,13 @@ private:
     HRESULT EnsureRenderSceneVertexShader(ID3D11Device* pd3dDevice, INT cascadeIndex);
     HRESULT EnsureRenderScenePixelShader(ID3D11Device* pd3dDevice, INT cascadeIndex, INT derivativeIndex, INT blendIndex, INT intervalIndex);
     HRESULT UpdateBoundingBoxBuffer( ID3D11Device* pd3dDevice, const ISceneMesh* pMesh );
+    HRESULT RenderDebugShadowOverlay( ID3D11DeviceContext* pd3dDeviceContext,
+        ID3D11RenderTargetView* prtvBackBuffer,
+        D3D11_VIEWPORT* dxutViewPort );
+    HRESULT RenderDebugBoundingBoxes( ID3D11DeviceContext* pd3dDeviceContext,
+        ID3D11RenderTargetView* prtvBackBuffer,
+        ID3D11DepthStencilView* pdsvBackBuffer,
+        D3D11_VIEWPORT* dxutViewPort );
     HRESULT RenderVoxelizationVolume(ID3D11DeviceContext* pd3dDeviceContext,
         ISceneMesh* pMesh,
         FXMVECTOR vVoxelMin,
@@ -151,6 +160,7 @@ private:
     XMVECTOR                            m_vDynamicVoxelAABBMax;
     bool                                m_bStaticVoxelizationDirty = true;
     bool                                m_bRenderDebug = false;
+    bool                                m_bRenderDebugBoundingBox = false;
                                                                                // For example: when the shadow buffer size changes.
     char                                m_cvsModel[31];
     char                                m_cpsModel[31];
@@ -174,18 +184,22 @@ private:
     ID3DBlob*                           m_pvsVoxelizationBlob;
     ID3D11VertexShader*                 m_pvsRenderScene[MAX_CASCADES];
     ID3D11VertexShader*                 m_pvsDebug;
+    ID3D11VertexShader*                 m_pvsDebugBoundingBox = nullptr;
     ID3D11VertexShader*                 m_pvsVisualizeVoxelization = nullptr;
 	ID3DBlob*                           m_pvsDebugBlob;
+    ID3DBlob*                           m_pvsDebugBoundingBoxBlob = nullptr;
     ID3DBlob*                           m_pvsVisualizeVoxelizationBlob = nullptr;
     ID3DBlob*                           m_pvsRenderSceneBlob[MAX_CASCADES];
     ID3D11PixelShader*                  m_ppsRenderSceneAllShaders[MAX_CASCADES][2][2][2];
     ID3DBlob*                           m_ppsRenderSceneAllShadersBlob[MAX_CASCADES][2][2][2];
 	ID3D11PixelShader*                  m_ppsDebug;
+    ID3D11PixelShader*                  m_ppsDebugBoundingBox = nullptr;
     ID3D11PixelShader*                  m_ppsVisualizeVoxelization = nullptr;
     ID3D11PixelShader*                  m_ppsVoxelization;
     ID3D11GeometryShader*               m_pgsVoxelization;
     ID3DBlob*                           m_ppsVoxelizationBlob;
 	ID3DBlob*                           m_ppsDebugBlob;
+    ID3DBlob*                           m_ppsDebugBoundingBoxBlob = nullptr;
     ID3DBlob*                           m_ppsVisualizeVoxelizationBlob = nullptr;
 
     ID3D11Texture2D*                    m_pCascadedShadowMapTexture ;

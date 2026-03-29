@@ -134,12 +134,13 @@ float                       g_fDepthScale;
 #define IDC_GUI_CASCADE_SELECT_TEXT   59
 #define IDC_GUI_SCENE_TEXT            60
 #define IDC_GUI_SCENE_COMBO           61
+#define IDC_TOGGLE_DEBUG_BOUNDING_BOX 62
 
 Gui_SelectorPanelState      g_SelectorGuiState = { GUI_PANEL_CATEGORY_DEBUG, POWER_PLANT_SCENE };
 Gui_SelectorPanelIds        g_SelectorPanelIds = { IDC_GUI_CATEGORY_TEXT, IDC_GUI_CATEGORY_COMBO, IDC_GUI_SCENE_TEXT, IDC_GUI_SCENE_COMBO };
 Gui_SelectorPanel           g_SelectorPanel( g_SelectorPanelIds, g_SelectorGuiState );
 Gui_DebugPanelState         g_DebugGuiState = {};
-Gui_DebugPanelIds           g_DebugPanelIds = { IDC_TOGGLE_DEBUG_CASCADES };
+Gui_DebugPanelIds           g_DebugPanelIds = { IDC_TOGGLE_DEBUG_CASCADES, IDC_TOGGLE_DEBUG_BOUNDING_BOX };
 Gui_DebugPanel              g_DebugPanel( g_DebugPanelIds, g_DebugGuiState );
 Gui_ShadowPanelState        g_ShadowGuiState = {};
 Gui_ShadowPanelIds          g_ShadowPanelIds =
