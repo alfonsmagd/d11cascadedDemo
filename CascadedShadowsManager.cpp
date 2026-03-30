@@ -234,43 +234,82 @@ HRESULT CascadedShadowsManager::UpdateBoundingBoxBuffer( ID3D11Device* pd3dDevic
 
     m_SceneBoundingBoxes.clear();
     m_nBoundingBoxes = 0;
+    m_AllBoundingBoxes.clear();
+    m_nAllBoundingBoxes = 0;
 
     if( pMesh )
     {
         pMesh->UpdateGlobalBoundingBox( m_SceneBoundingBoxes );
+        pMesh->UpdateAllBoundingBoxes( m_AllBoundingBoxes );
     }
 
     SAFE_RELEASE( m_pBoundingBoxSRV );
     SAFE_RELEASE( m_pBoundingBoxBuffer );
+    SAFE_RELEASE( m_pBoundingAllBoxBuffer );
+    SAFE_RELEASE( m_pBoundingAllBoxSRV );
 
-    if( m_SceneBoundingBoxes.empty() )
+    const auto createBoundingBoxResources =
+        [&]( const std::vector<BoundingBox>& boundingBoxes,
+             ID3D11Buffer** ppBuffer,
+             ID3D11ShaderResourceView** ppSRV,
+             const char* bufferName,
+             const char* srvName ) -> HRESULT
     {
+        if( boundingBoxes.empty() )
+        {
+            return S_OK;
+        }
+
+        D3D11_BUFFER_DESC boxBufferDesc = {};
+        boxBufferDesc.ByteWidth = UINT( sizeof( BoundingBox ) * boundingBoxes.size() );
+        boxBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+        boxBufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        boxBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+        boxBufferDesc.StructureByteStride = sizeof( BoundingBox );
+
+        D3D11_SUBRESOURCE_DATA boxBufferData = {};
+        boxBufferData.pSysMem = boundingBoxes.data();
+
+        HRESULT localHr = pd3dDevice->CreateBuffer( &boxBufferDesc, &boxBufferData, ppBuffer );
+        if( FAILED( localHr ) )
+        {
+            return localHr;
+        }
+        DXUT_SetDebugName( *ppBuffer, bufferName );
+
+        D3D11_SHADER_RESOURCE_VIEW_DESC boxSRVDesc = {};
+        boxSRVDesc.Format = DXGI_FORMAT_UNKNOWN;
+        boxSRVDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+        boxSRVDesc.Buffer.FirstElement = 0;
+        boxSRVDesc.Buffer.NumElements = UINT( boundingBoxes.size() );
+
+        localHr = pd3dDevice->CreateShaderResourceView( *ppBuffer, &boxSRVDesc, ppSRV );
+        if( FAILED( localHr ) )
+        {
+            SAFE_RELEASE( *ppBuffer );
+            return localHr;
+        }
+        DXUT_SetDebugName( *ppSRV, srvName );
+
         return S_OK;
-    }
+    };
 
-    D3D11_BUFFER_DESC boxBufferDesc = {};
-    boxBufferDesc.ByteWidth = UINT( sizeof( BoundingBox ) * m_SceneBoundingBoxes.size() );
-    boxBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-    boxBufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-    boxBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
-    boxBufferDesc.StructureByteStride = sizeof( BoundingBox );
+    V_RETURN( createBoundingBoxResources(
+        m_SceneBoundingBoxes,
+        &m_pBoundingBoxBuffer,
+        &m_pBoundingBoxSRV,
+        "SceneBoundingBoxBuffer",
+        "SceneBoundingBoxSRV" ) );
 
-    D3D11_SUBRESOURCE_DATA boxBufferData = {};
-    boxBufferData.pSysMem = m_SceneBoundingBoxes.data();
-
-    V_RETURN( pd3dDevice->CreateBuffer( &boxBufferDesc, &boxBufferData, &m_pBoundingBoxBuffer ) );
-    DXUT_SetDebugName( m_pBoundingBoxBuffer, "SceneBoundingBoxBuffer" );
-
-    D3D11_SHADER_RESOURCE_VIEW_DESC boxSRVDesc = {};
-    boxSRVDesc.Format = DXGI_FORMAT_UNKNOWN;
-    boxSRVDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
-    boxSRVDesc.Buffer.FirstElement = 0;
-    boxSRVDesc.Buffer.NumElements = UINT( m_SceneBoundingBoxes.size() );
-
-    V_RETURN( pd3dDevice->CreateShaderResourceView( m_pBoundingBoxBuffer, &boxSRVDesc, &m_pBoundingBoxSRV ) );
-    DXUT_SetDebugName( m_pBoundingBoxSRV, "SceneBoundingBoxSRV" );
+    V_RETURN( createBoundingBoxResources(
+        m_AllBoundingBoxes,
+        &m_pBoundingAllBoxBuffer,
+        &m_pBoundingAllBoxSRV,
+        "AllBoundingBoxBuffer",
+        "AllBoundingBoxSRV" ) );
 
     m_nBoundingBoxes = UINT( m_SceneBoundingBoxes.size() );
+    m_nAllBoundingBoxes = UINT( m_AllBoundingBoxes.size() );
     return hr;
 }
 
@@ -602,8 +641,12 @@ HRESULT CascadedShadowsManager::DestroyAndDeallocateShadowResources()
     SAFE_RELEASE(m_pCascadedShadowMapSRV);
     SAFE_RELEASE(m_pBoundingBoxBuffer);
     SAFE_RELEASE(m_pBoundingBoxSRV);
+    SAFE_RELEASE(m_pBoundingAllBoxBuffer);
+    SAFE_RELEASE(m_pBoundingAllBoxSRV);
     m_SceneBoundingBoxes.clear();
     m_nBoundingBoxes = 0;
+    m_AllBoundingBoxes.clear();
+    m_nAllBoundingBoxes = 0;
 
     SAFE_RELEASE(m_pVoxelAlbedoTex);
     SAFE_RELEASE(m_pVoxelAlbedoUAV);
@@ -1748,14 +1791,14 @@ HRESULT CascadedShadowsManager::RenderScene(ID3D11DeviceContext* pd3dDeviceConte
 
 HRESULT CascadedShadowsManager::RenderDebug(ID3D11DeviceContext* pd3dDeviceContext, ID3D11RenderTargetView* prtvBackBuffer, ID3D11DepthStencilView* pdsvBackBuffer, D3D11_VIEWPORT* dxutViewPort)
 {
-    if( !m_bRenderDebug && !m_bRenderDebugBoundingBox )
+    if( !m_bRenderDebug && !m_bRenderDebugBoundingBox && !m_bRenderDebugAllBoundingBoxes )
     {
         return S_OK;
     }
 
     HRESULT hr = S_OK;
 
-    if( m_bRenderDebugBoundingBox )
+    if( m_bRenderDebugBoundingBox || m_bRenderDebugAllBoundingBoxes )
     {
         V_RETURN( RenderDebugBoundingBoxes( pd3dDeviceContext, prtvBackBuffer, pdsvBackBuffer, dxutViewPort ) );
     }
@@ -1821,7 +1864,9 @@ HRESULT CascadedShadowsManager::RenderDebugBoundingBoxes( ID3D11DeviceContext* p
 {
     HRESULT hr = S_OK;
 
-    if( !m_pBoundingBoxSRV || m_nBoundingBoxes == 0 || !m_pvsDebugBoundingBox || !m_ppsDebugBoundingBox )
+    const bool drawSceneBoundingBox = m_bRenderDebugBoundingBox && m_pBoundingBoxSRV && m_nBoundingBoxes > 0;
+    const bool drawAllBoundingBoxes = m_bRenderDebugAllBoundingBoxes && m_pBoundingAllBoxSRV && m_nAllBoundingBoxes > 0;
+    if( ( !drawSceneBoundingBox && !drawAllBoundingBoxes ) || !m_pvsDebugBoundingBox || !m_ppsDebugBoundingBox )
     {
         return S_OK;
     }
@@ -1857,9 +1902,18 @@ HRESULT CascadedShadowsManager::RenderDebugBoundingBoxes( ID3D11DeviceContext* p
     pd3dDeviceContext->VSSetShader( m_pvsDebugBoundingBox, NULL, 0 );
     pd3dDeviceContext->PSSetShader( m_ppsDebugBoundingBox, NULL, 0 );
     pd3dDeviceContext->VSSetConstantBuffers( 0, 1, &m_pcbGlobalConstantBuffer );
-    pd3dDeviceContext->VSSetShaderResources( 0, 1, &m_pBoundingBoxSRV );
 
-    pd3dDeviceContext->DrawInstanced( 24, m_nBoundingBoxes, 0, 0 );
+    if( drawSceneBoundingBox )
+    {
+        pd3dDeviceContext->VSSetShaderResources( 0, 1, &m_pBoundingBoxSRV );
+        pd3dDeviceContext->DrawInstanced( 24, m_nBoundingBoxes, 0, 0 );
+    }
+
+    if( drawAllBoundingBoxes )
+    {
+        pd3dDeviceContext->VSSetShaderResources( 0, 1, &m_pBoundingAllBoxSRV );
+        pd3dDeviceContext->DrawInstanced( 24, m_nAllBoundingBoxes, 0, 0 );
+    }
 
     ID3D11ShaderResourceView* nullSRV[1] = { NULL };
     pd3dDeviceContext->VSSetShaderResources( 0, 1, nullSRV );

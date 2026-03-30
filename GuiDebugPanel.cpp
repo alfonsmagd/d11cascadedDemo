@@ -84,8 +84,10 @@ Gui_DebugPanel::Gui_DebugPanel( const Gui_DebugPanelIds& ids, Gui_DebugPanelStat
       m_state( state ),
       m_renderDebugStrategy( state ),
       m_renderDebugBoundingBoxStrategy( state ),
+      m_renderDebugAllBoundingBoxesStrategy(state),
       m_renderDebugControl( ids.renderDebugId, m_renderDebugStrategy ),
-      m_renderDebugBoundingBoxControl( ids.renderDebugBoundingBoxId, m_renderDebugBoundingBoxStrategy )
+      m_renderDebugBoundingBoxControl( ids.renderDebugBoundingBoxId, m_renderDebugBoundingBoxStrategy ),
+    m_renderDebugAllBoundingBoxesControl(ids.renderAllBoundingBoxesId, m_renderDebugAllBoundingBoxesStrategy)
 {
 }
 
@@ -93,6 +95,46 @@ void Gui_DebugPanel::BuildControls( GuiControlFactory& factory )
 {
     RegisterControl( m_renderDebugControl );
     RegisterControl( m_renderDebugBoundingBoxControl );
+    RegisterControl( m_renderDebugAllBoundingBoxesControl );
     factory.Add( m_renderDebugControl );
     factory.Add( m_renderDebugBoundingBoxControl );
+    factory.Add( m_renderDebugAllBoundingBoxesControl );
+}
+
+
+Gui_RenderAllBoundingBoxesStrategy::Gui_RenderAllBoundingBoxesStrategy(Gui_DebugPanelState& state)
+    : m_state(state)
+{
+}
+
+const WCHAR* Gui_RenderAllBoundingBoxesStrategy::GetLabelText() const
+{
+    return L"Render All Bounding Boxes";
+}
+
+bool Gui_RenderAllBoundingBoxesStrategy::ReadValue() const
+{
+    return m_state.renderAllBoundingBoxes;
+}
+
+void Gui_RenderAllBoundingBoxesStrategy::WriteValue(bool checked)
+{
+    m_state.renderAllBoundingBoxes = checked;
+}
+
+void Gui_RenderAllBoundingBoxesStrategy::SyncToRuntime(GuiRuntimeContext& runtime)
+{
+    if (runtime.pCascadedShadow)
+    {
+        runtime.pCascadedShadow->SetRenderDebugAllBoundingBoxesEnabled(m_state.renderAllBoundingBoxes);
+    }
+
+}
+
+void Gui_RenderAllBoundingBoxesStrategy::SyncFromRuntime(const GuiRuntimeContext& runtime)
+{
+    if (runtime.pCascadedShadow)
+    {
+        m_state.renderAllBoundingBoxes = runtime.pCascadedShadow->IsRenderDebugAllBoundingBoxesEnabled();
+    }
 }

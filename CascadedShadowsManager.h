@@ -75,7 +75,9 @@ public:
     void SetRenderDebugEnabled( bool enabled ) { m_bRenderDebug = enabled; }
     bool IsRenderDebugEnabled() const { return m_bRenderDebug; }
     void SetRenderDebugBoundingBoxEnabled( bool enabled ) { m_bRenderDebugBoundingBox = enabled; }
+    void SetRenderDebugAllBoundingBoxesEnabled(bool enabled) { m_bRenderDebugAllBoundingBoxes = enabled; }
     bool IsRenderDebugBoundingBoxEnabled() const { return m_bRenderDebugBoundingBox; }
+    bool IsRenderDebugAllBoundingBoxesEnabled() const { return m_bRenderDebugAllBoundingBoxes; }
 
     FLOAT                               m_fStaticVoxelHeightWarp = 0.55f;
     FLOAT                               m_fVoxelVisualizeSurfaceSnap = 0.22f;
@@ -161,6 +163,7 @@ private:
     bool                                m_bStaticVoxelizationDirty = true;
     bool                                m_bRenderDebug = false;
     bool                                m_bRenderDebugBoundingBox = false;
+    bool                                m_bRenderDebugAllBoundingBoxes = false;
                                                                                // For example: when the shadow buffer size changes.
     char                                m_cvsModel[31];
     char                                m_cpsModel[31];
@@ -207,6 +210,8 @@ private:
     ID3D11ShaderResourceView*           m_pCascadedShadowMapSRV ;
     std::vector<BoundingBox>            m_SceneBoundingBoxes;
     UINT                                m_nBoundingBoxes = 0;
+    std::vector<BoundingBox>            m_AllBoundingBoxes;
+    UINT                                m_nAllBoundingBoxes = 0;
 
 
     ID3D11Texture3D*                    m_pVoxelAlbedoTex = nullptr;
@@ -238,6 +243,9 @@ private:
 
     ID3D11Buffer*                       m_pBoundingBoxBuffer = nullptr;
     ID3D11ShaderResourceView*           m_pBoundingBoxSRV = nullptr;
+
+    ID3D11Buffer*                       m_pBoundingAllBoxBuffer = nullptr;
+    ID3D11ShaderResourceView*           m_pBoundingAllBoxSRV = nullptr;
 
     ID3D11Buffer*                       m_pcbVoxelParams;
     ID3D11Buffer*                       m_pcbVisualizeVoxels = nullptr;

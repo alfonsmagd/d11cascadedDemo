@@ -20,6 +20,21 @@ struct BoundingBox
     XMFLOAT4 color;
 };
 
+inline BoundingBox MakeBoundingBoxFromMinMax(const D3DXVECTOR3& vMin, const D3DXVECTOR3& vMax, const XMFLOAT4& color)
+{
+    BoundingBox box = {};
+    box.color = color;
+    box.corners[0] = XMFLOAT3(vMin.x, vMin.y, vMin.z);
+    box.corners[1] = XMFLOAT3(vMax.x, vMin.y, vMin.z);
+    box.corners[2] = XMFLOAT3(vMax.x, vMax.y, vMin.z);
+    box.corners[3] = XMFLOAT3(vMin.x, vMax.y, vMin.z);
+    box.corners[4] = XMFLOAT3(vMin.x, vMin.y, vMax.z);
+    box.corners[5] = XMFLOAT3(vMax.x, vMin.y, vMax.z);
+    box.corners[6] = XMFLOAT3(vMax.x, vMax.y, vMax.z);
+    box.corners[7] = XMFLOAT3(vMin.x, vMax.y, vMax.z);
+    return box;
+}
+
 
 class ISceneMesh
 {
@@ -36,6 +51,7 @@ public:
     virtual XMVECTOR GetAABBMin() const = 0;
     virtual XMVECTOR GetAABBMax() const = 0;
     virtual void UpdateGlobalBoundingBox(std::vector<BoundingBox>& globalBoundingBoxes) const = 0;
+    virtual void UpdateAllBoundingBoxes(std::vector<BoundingBox>& boundingBoxes) const = 0;
 };
 
 class SDKSceneMesh : public ISceneMesh
@@ -53,6 +69,9 @@ public:
         UNREFERENCED_PARAMETER(pd3dDeviceContext);
 
         ResetBounds();
+        m_SubMeshBoundingBoxes.clear();
+        m_SubMeshBoundingBoxes.reserve(m_Mesh.GetNumMeshes());
+
         HRESULT hr = m_Mesh.Create(pd3dDevice, m_szMeshPath.c_str());
         if (FAILED(hr))
         {
@@ -78,8 +97,10 @@ public:
             m_vAABBMax.x = max(m_vAABBMax.x, meshMax.x);
             m_vAABBMax.y = max(m_vAABBMax.y, meshMax.y);
             m_vAABBMax.z = max(m_vAABBMax.z, meshMax.z);
+
+            m_SubMeshBoundingBoxes.push_back(MakeBoundingBoxFromMinMax(meshMin, meshMax, XMFLOAT4(0, 0, 1, 1)));
         }
-        GetBoundingBox();
+        m_SceneBounding = MakeBoundingBoxFromMinMax(m_vAABBMin, m_vAABBMax, XMFLOAT4(1, 0, 1, 1));
       
 
         m_bLoaded = true;
@@ -90,6 +111,7 @@ public:
     {
         m_Mesh.Destroy();
         m_bLoaded = false;
+        m_SubMeshBoundingBoxes.clear();
         ResetBounds();
     }
 
@@ -118,17 +140,8 @@ public:
 
     BoundingBox GetBoundingBox() 
     {
-        BoundingBox& box = m_SceneBounding;
-        box.color = XMFLOAT4(1, 0, 1, 1);
-        box.corners[0] = XMFLOAT3(m_vAABBMin.x, m_vAABBMin.y, m_vAABBMin.z);
-        box.corners[1] = XMFLOAT3(m_vAABBMax.x, m_vAABBMin.y, m_vAABBMin.z);
-        box.corners[2] = XMFLOAT3(m_vAABBMax.x, m_vAABBMax.y, m_vAABBMin.z);
-        box.corners[3] = XMFLOAT3(m_vAABBMin.x, m_vAABBMax.y, m_vAABBMin.z);
-        box.corners[4] = XMFLOAT3(m_vAABBMin.x, m_vAABBMin.y, m_vAABBMax.z);
-        box.corners[5] = XMFLOAT3(m_vAABBMax.x, m_vAABBMin.y, m_vAABBMax.z);
-        box.corners[6] = XMFLOAT3(m_vAABBMax.x, m_vAABBMax.y, m_vAABBMax.z);
-        box.corners[7] = XMFLOAT3(m_vAABBMin.x, m_vAABBMax.y, m_vAABBMax.z);
-        return box;
+        m_SceneBounding = MakeBoundingBoxFromMinMax(m_vAABBMin, m_vAABBMax, XMFLOAT4(1, 0, 1, 1));
+        return m_SceneBounding;
     }
 
     const BoundingBox& GetBoundingBox() const
@@ -139,6 +152,11 @@ public:
     void UpdateGlobalBoundingBox(std::vector<BoundingBox>& globalBoundingBoxes) const override
     {
         globalBoundingBoxes.push_back(GetBoundingBox());
+    }
+
+    void UpdateAllBoundingBoxes(std::vector<BoundingBox>& boundingBoxes) const override
+    {
+        boundingBoxes.insert(boundingBoxes.end(), m_SubMeshBoundingBoxes.begin(), m_SubMeshBoundingBoxes.end());
     }
 
 private:
@@ -154,6 +172,7 @@ private:
     D3DXVECTOR3     m_vAABBMin;
     D3DXVECTOR3     m_vAABBMax;
     BoundingBox     m_SceneBounding;
+    std::vector<BoundingBox> m_SubMeshBoundingBoxes;
 };
 
 class OBJSceneMesh : public ISceneMesh
@@ -173,17 +192,12 @@ public:
 
     void UpdateGlobalBoundingBox(std::vector<BoundingBox>& globalBoundingBoxes) const override
     {
-        BoundingBox box = {};
-        box.color = XMFLOAT4( 1, 0, 1, 1 );
-        box.corners[0] = XMFLOAT3( m_vAABBMin.x, m_vAABBMin.y, m_vAABBMin.z );
-        box.corners[1] = XMFLOAT3( m_vAABBMax.x, m_vAABBMin.y, m_vAABBMin.z );
-        box.corners[2] = XMFLOAT3( m_vAABBMax.x, m_vAABBMax.y, m_vAABBMin.z );
-        box.corners[3] = XMFLOAT3( m_vAABBMin.x, m_vAABBMax.y, m_vAABBMin.z );
-        box.corners[4] = XMFLOAT3( m_vAABBMin.x, m_vAABBMin.y, m_vAABBMax.z );
-        box.corners[5] = XMFLOAT3( m_vAABBMax.x, m_vAABBMin.y, m_vAABBMax.z );
-        box.corners[6] = XMFLOAT3( m_vAABBMax.x, m_vAABBMax.y, m_vAABBMax.z );
-        box.corners[7] = XMFLOAT3( m_vAABBMin.x, m_vAABBMax.y, m_vAABBMax.z );
-        globalBoundingBoxes.push_back( box );
+        globalBoundingBoxes.push_back(MakeBoundingBoxFromMinMax(m_vAABBMin, m_vAABBMax, XMFLOAT4(1, 0, 1, 1)));
+    }
+
+    void UpdateAllBoundingBoxes(std::vector<BoundingBox>& boundingBoxes) const override
+    {
+        boundingBoxes.insert(boundingBoxes.end(), m_SubsetBoundingBoxes.begin(), m_SubsetBoundingBoxes.end());
     }
 
 
@@ -261,6 +275,8 @@ public:
             }
         }
 
+        BuildSubsetBoundingBoxes(vertices, indices);
+
         V_RETURN(CreateFallbackTexture(pd3dDevice));
 
         m_Materials.clear();
@@ -297,6 +313,7 @@ public:
 
         m_Materials.clear();
         m_Subsets.clear();
+        m_SubsetBoundingBoxes.clear();
         SAFE_RELEASE(m_pFallbackDiffuseSRV);
         m_bLoaded = false;
         ResetBounds();
@@ -465,6 +482,49 @@ private:
     {
         m_vAABBMin = D3DXVECTOR3(FLT_MAX, FLT_MAX, FLT_MAX);
         m_vAABBMax = D3DXVECTOR3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+    }
+
+    void BuildSubsetBoundingBoxes(const std::vector<OBJVertex>& vertices, const std::vector<UINT>& indices)
+    {
+        m_SubsetBoundingBoxes.clear();
+        m_SubsetBoundingBoxes.reserve(m_Subsets.size());
+
+        for (size_t subsetIndex = 0; subsetIndex < m_Subsets.size(); ++subsetIndex)
+        {
+            const Subset& subset = m_Subsets[subsetIndex];
+            D3DXVECTOR3 subsetMin(FLT_MAX, FLT_MAX, FLT_MAX);
+            D3DXVECTOR3 subsetMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+            bool hasVertices = false;
+
+            for (UINT indexOffset = 0; indexOffset < subset.IndexCount; ++indexOffset)
+            {
+                const UINT meshIndex = subset.IndexStart + indexOffset;
+                if (meshIndex >= indices.size())
+                {
+                    continue;
+                }
+
+                const UINT vertexIndex = indices[meshIndex];
+                if (vertexIndex >= vertices.size())
+                {
+                    continue;
+                }
+
+                const D3DXVECTOR3& position = vertices[vertexIndex].position;
+                subsetMin.x = min(subsetMin.x, position.x);
+                subsetMin.y = min(subsetMin.y, position.y);
+                subsetMin.z = min(subsetMin.z, position.z);
+                subsetMax.x = max(subsetMax.x, position.x);
+                subsetMax.y = max(subsetMax.y, position.y);
+                subsetMax.z = max(subsetMax.z, position.z);
+                hasVertices = true;
+            }
+
+            if (hasVertices)
+            {
+                m_SubsetBoundingBoxes.push_back(MakeBoundingBoxFromMinMax(subsetMin, subsetMax, XMFLOAT4(0, 0, 1, 1)));
+            }
+        }
     }
 
     HRESULT CreateFallbackTexture(ID3D11Device* pd3dDevice)
@@ -752,6 +812,7 @@ private:
     ID3D11Buffer*                   m_pIndexBuffer;
     ID3D11ShaderResourceView*       m_pFallbackDiffuseSRV;
     std::vector<Subset>             m_Subsets;
+    std::vector<BoundingBox>        m_SubsetBoundingBoxes;
     std::vector<MaterialResources>  m_Materials;
     D3DXVECTOR3                     m_vAABBMin;
     D3DXVECTOR3                     m_vAABBMax;
