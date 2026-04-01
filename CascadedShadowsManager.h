@@ -143,6 +143,14 @@ private:
         ID3D11RenderTargetView* prtvBackBuffer,
         ID3D11DepthStencilView* pdsvBackBuffer,
         D3D11_VIEWPORT* dxutViewPort );
+    HRESULT RenderSelectionRing( ID3D11DeviceContext* pd3dDeviceContext,
+        ID3D11RenderTargetView* prtvBackBuffer,
+        ID3D11DepthStencilView* pdsvBackBuffer,
+        D3D11_VIEWPORT* dxutViewPort );
+    HRESULT RenderSelectionBeam( ID3D11DeviceContext* pd3dDeviceContext,
+        ID3D11RenderTargetView* prtvBackBuffer,
+        ID3D11DepthStencilView* pdsvBackBuffer,
+        D3D11_VIEWPORT* dxutViewPort );
     HRESULT RenderVoxelizationVolume(ID3D11DeviceContext* pd3dDeviceContext,
         ISceneMesh* pMesh,
         FXMVECTOR vVoxelMin,
@@ -190,21 +198,29 @@ private:
     ID3D11VertexShader*                 m_pvsRenderScene[MAX_CASCADES];
     ID3D11VertexShader*                 m_pvsDebug = nullptr;
     ID3D11VertexShader*                 m_pvsDebugBoundingBox = nullptr;
+    ID3D11VertexShader*                 m_pvsSelectionBeam = nullptr;
+    ID3D11VertexShader*                 m_pvsSelectionRing = nullptr;
     ID3D11VertexShader*                 m_pvsVisualizeVoxelization = nullptr;
 	ID3DBlob*                           m_pvsDebugBlob = nullptr;
     ID3DBlob*                           m_pvsDebugBoundingBoxBlob = nullptr;
+    ID3DBlob*                           m_pvsSelectionBeamBlob = nullptr;
+    ID3DBlob*                           m_pvsSelectionRingBlob = nullptr;
     ID3DBlob*                           m_pvsVisualizeVoxelizationBlob = nullptr;
     ID3DBlob*                           m_pvsRenderSceneBlob[MAX_CASCADES];
     ID3D11PixelShader*                  m_ppsRenderSceneAllShaders[MAX_CASCADES][2][2][2];
     ID3DBlob*                           m_ppsRenderSceneAllShadersBlob[MAX_CASCADES][2][2][2];
 	ID3D11PixelShader*                  m_ppsDebug = nullptr;
     ID3D11PixelShader*                  m_ppsDebugBoundingBox = nullptr;
+    ID3D11PixelShader*                  m_ppsSelectionBeam = nullptr;
+    ID3D11PixelShader*                  m_ppsSelectionRing = nullptr;
     ID3D11PixelShader*                  m_ppsVisualizeVoxelization = nullptr;
     ID3D11PixelShader*                  m_ppsVoxelization = nullptr;
     ID3D11GeometryShader*               m_pgsVoxelization = nullptr;
     ID3DBlob*                           m_ppsVoxelizationBlob = nullptr;
 	ID3DBlob*                           m_ppsDebugBlob = nullptr;
     ID3DBlob*                           m_ppsDebugBoundingBoxBlob = nullptr;
+    ID3DBlob*                           m_ppsSelectionBeamBlob = nullptr;
+    ID3DBlob*                           m_ppsSelectionRingBlob = nullptr;
     ID3DBlob*                           m_ppsVisualizeVoxelizationBlob = nullptr;
 
     ID3D11Texture2D*                    m_pCascadedShadowMapTexture = nullptr;
@@ -250,6 +266,8 @@ private:
     ID3D11Buffer*                       m_pBoundingAllBoxBuffer = nullptr;
     ID3D11ShaderResourceView*           m_pBoundingAllBoxSRV = nullptr;
 
+    ID3D11Buffer*                       m_pcbSelectionBeam = nullptr;
+    ID3D11Buffer*                       m_pcbSelectionRing = nullptr;
     ID3D11Buffer*                       m_pcbVoxelParams = nullptr;
     ID3D11Buffer*                       m_pcbVisualizeVoxels = nullptr;
     ID3D11Buffer*                       m_pcbGlobalConstantBuffer = nullptr; // All VS and PS constants are in the same buffer.  
@@ -262,6 +280,7 @@ private:
     ID3D11RasterizerState*              m_prsShadowPancake = nullptr;
     ID3D11RasterizerState*              m_prsDebug = nullptr;
     ID3D11BlendState*                   m_pbsVoxelVisualize = nullptr;
+    ID3D11DepthStencilState*            m_pdssSelectionOverlay = nullptr;
     
     D3D11_VIEWPORT                      m_RenderVP[MAX_CASCADES];
     D3D11_VIEWPORT                      m_RenderOneTileVP;
