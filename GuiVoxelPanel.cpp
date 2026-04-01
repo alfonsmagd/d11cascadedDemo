@@ -1,290 +1,238 @@
 #include "DXUT.h"
 #include "GuiVoxelPanel.h"
 #include "CascadedShadowsManager.h"
-#include <wchar.h>
 
-Gui_VoxelSliderStrategy::Gui_VoxelSliderStrategy( GUI_VOXEL_SLIDER_KIND kind, Gui_VoxelPanelState& state )
-    : m_kind( kind ),
-      m_state( state )
+namespace
 {
-}
-
-INT Gui_VoxelSliderStrategy::GetMinValue() const
-{
-    switch( m_kind )
+    enum VoxelSliderKind
     {
-        case GUI_VOXEL_SLIDER_SURFACE_SNAP:
-            return 0;
-        case GUI_VOXEL_SLIDER_HEIGHT_WARP:
-            return 20;
-        case GUI_VOXEL_SLIDER_XY_FILL:
-        case GUI_VOXEL_SLIDER_YZ_FILL:
-            return 50;
-        case GUI_VOXEL_SLIDER_TOP_COVERAGE:
-            return 50;
+        VOXEL_SLIDER_SURFACE_SNAP,
+        VOXEL_SLIDER_HEIGHT_WARP,
+        VOXEL_SLIDER_XY_FILL,
+        VOXEL_SLIDER_YZ_FILL,
+        VOXEL_SLIDER_TOP_COVERAGE
+    };
+
+    INT GetVoxelSliderMinValue( VoxelSliderKind kind )
+    {
+        switch( kind )
+        {
+            case VOXEL_SLIDER_SURFACE_SNAP:
+                return 0;
+            case VOXEL_SLIDER_HEIGHT_WARP:
+                return 20;
+            case VOXEL_SLIDER_XY_FILL:
+            case VOXEL_SLIDER_YZ_FILL:
+            case VOXEL_SLIDER_TOP_COVERAGE:
+                return 50;
+        }
+
+        return 0;
     }
 
-    return 0;
-}
-
-INT Gui_VoxelSliderStrategy::GetMaxValue() const
-{
-    switch( m_kind )
+    INT GetVoxelSliderMaxValue( VoxelSliderKind kind )
     {
-        case GUI_VOXEL_SLIDER_SURFACE_SNAP:
-            return 100;
-        case GUI_VOXEL_SLIDER_HEIGHT_WARP:
-            return 250;
-        case GUI_VOXEL_SLIDER_XY_FILL:
-        case GUI_VOXEL_SLIDER_YZ_FILL:
-            return 400;
-        case GUI_VOXEL_SLIDER_TOP_COVERAGE:
-            return 100;
+        switch( kind )
+        {
+            case VOXEL_SLIDER_SURFACE_SNAP:
+                return 100;
+            case VOXEL_SLIDER_HEIGHT_WARP:
+                return 250;
+            case VOXEL_SLIDER_XY_FILL:
+            case VOXEL_SLIDER_YZ_FILL:
+                return 400;
+            case VOXEL_SLIDER_TOP_COVERAGE:
+                return 100;
+        }
+
+        return 100;
     }
 
-    return 100;
-}
-
-INT Gui_VoxelSliderStrategy::ReadValue() const
-{
-    switch( m_kind )
+    INT ReadVoxelSliderValue( VoxelSliderKind kind, const Gui_VoxelPanelState& state )
     {
-        case GUI_VOXEL_SLIDER_SURFACE_SNAP:
-            return ( INT )( m_state.surfaceSnap * 100.0f );
-        case GUI_VOXEL_SLIDER_HEIGHT_WARP:
-            return ( INT )( m_state.heightWarp * 100.0f );
-        case GUI_VOXEL_SLIDER_XY_FILL:
-            return ( INT )( m_state.xyFill * 100.0f );
-        case GUI_VOXEL_SLIDER_YZ_FILL:
-            return ( INT )( m_state.yzFill * 100.0f );
-        case GUI_VOXEL_SLIDER_TOP_COVERAGE:
-            return ( INT )( m_state.topCoverage * 100.0f );
+        switch( kind )
+        {
+            case VOXEL_SLIDER_SURFACE_SNAP:
+                return (INT)( state.surfaceSnap * 100.0f );
+            case VOXEL_SLIDER_HEIGHT_WARP:
+                return (INT)( state.heightWarp * 100.0f );
+            case VOXEL_SLIDER_XY_FILL:
+                return (INT)( state.xyFill * 100.0f );
+            case VOXEL_SLIDER_YZ_FILL:
+                return (INT)( state.yzFill * 100.0f );
+            case VOXEL_SLIDER_TOP_COVERAGE:
+                return (INT)( state.topCoverage * 100.0f );
+        }
+
+        return 0;
     }
 
-    return 0;
-}
-
-void Gui_VoxelSliderStrategy::WriteValue( INT rawValue, UINT nEvent )
-{
-    const float value = rawValue * 0.01f;
-
-    switch( m_kind )
+    void WriteVoxelSliderValue( VoxelSliderKind kind, Gui_VoxelPanelState& state, INT rawValue, UINT nEvent )
     {
-        case GUI_VOXEL_SLIDER_SURFACE_SNAP:
-            m_state.surfaceSnap = value;
-        break;
-        case GUI_VOXEL_SLIDER_HEIGHT_WARP:
-            m_state.heightWarp = value;
-        break;
-        case GUI_VOXEL_SLIDER_XY_FILL:
-            m_state.xyFill = value;
-        break;
-        case GUI_VOXEL_SLIDER_YZ_FILL:
-            m_state.yzFill = value;
-        break;
-        case GUI_VOXEL_SLIDER_TOP_COVERAGE:
-            m_state.topCoverage = value;
-        break;
+        const float value = rawValue * 0.01f;
+
+        switch( kind )
+        {
+            case VOXEL_SLIDER_SURFACE_SNAP:
+                state.surfaceSnap = value;
+            break;
+            case VOXEL_SLIDER_HEIGHT_WARP:
+                state.heightWarp = value;
+            break;
+            case VOXEL_SLIDER_XY_FILL:
+                state.xyFill = value;
+            break;
+            case VOXEL_SLIDER_YZ_FILL:
+                state.yzFill = value;
+            break;
+            case VOXEL_SLIDER_TOP_COVERAGE:
+                state.topCoverage = value;
+            break;
+        }
+
+        if( kind != VOXEL_SLIDER_SURFACE_SNAP && nEvent == EVENT_SLIDER_VALUE_CHANGED_UP )
+        {
+            state.requestStaticRevoxelization = true;
+        }
     }
 
-    if( m_kind != GUI_VOXEL_SLIDER_SURFACE_SNAP && nEvent == EVENT_SLIDER_VALUE_CHANGED_UP )
+    std::wstring FormatVoxelSliderCaption( VoxelSliderKind kind, INT rawValue )
     {
-        m_state.requestStaticRevoxelization = true;
-    }
-}
+        const float value = rawValue * 0.01f;
+        WCHAR text[128] = {};
 
-void Gui_VoxelSliderStrategy::FormatCaption( INT rawValue, WCHAR* text, size_t textCount ) const
-{
-    const float value = rawValue * 0.01f;
+        switch( kind )
+        {
+            case VOXEL_SLIDER_SURFACE_SNAP:
+                swprintf_s( text, L"Voxel Snap: %.2f", value );
+            break;
+            case VOXEL_SLIDER_HEIGHT_WARP:
+                swprintf_s( text, L"Height Warp: %.2f", value );
+            break;
+            case VOXEL_SLIDER_XY_FILL:
+                swprintf_s( text, L"XY Fill: %.2f", value );
+            break;
+            case VOXEL_SLIDER_YZ_FILL:
+                swprintf_s( text, L"YZ Fill: %.2f", value );
+            break;
+            case VOXEL_SLIDER_TOP_COVERAGE:
+                swprintf_s( text, L"Top Coverage: %.2f", value );
+            break;
+        }
 
-    switch( m_kind )
-    {
-        case GUI_VOXEL_SLIDER_SURFACE_SNAP:
-            swprintf_s( text, textCount, L"Voxel Snap: %.2f", value );
-        break;
-        case GUI_VOXEL_SLIDER_HEIGHT_WARP:
-            swprintf_s( text, textCount, L"Height Warp: %.2f", value );
-        break;
-        case GUI_VOXEL_SLIDER_XY_FILL:
-            swprintf_s( text, textCount, L"XY Fill: %.2f", value );
-        break;
-        case GUI_VOXEL_SLIDER_YZ_FILL:
-            swprintf_s( text, textCount, L"YZ Fill: %.2f", value );
-        break;
-        case GUI_VOXEL_SLIDER_TOP_COVERAGE:
-            swprintf_s( text, textCount, L"Top Coverage: %.2f", value );
-        break;
-    }
-}
-
-void Gui_VoxelSliderStrategy::SyncToRuntime( GuiRuntimeContext& runtime )
-{
-    if( !runtime.pCascadedShadow )
-    {
-        m_state.requestStaticRevoxelization = false;
-        return;
+        return text;
     }
 
-    switch( m_kind )
+    void SyncVoxelSliderToRuntime( VoxelSliderKind kind, Gui_VoxelPanelState& state, GuiRuntimeContext& runtime )
     {
-        case GUI_VOXEL_SLIDER_SURFACE_SNAP:
-            runtime.pCascadedShadow->m_fVoxelVisualizeSurfaceSnap = m_state.surfaceSnap;
-        break;
+        if( !runtime.pCascadedShadow )
+        {
+            state.requestStaticRevoxelization = false;
+            return;
+        }
 
-        case GUI_VOXEL_SLIDER_HEIGHT_WARP:
-            runtime.pCascadedShadow->m_fStaticVoxelHeightWarp = m_state.heightWarp;
-        break;
+        switch( kind )
+        {
+            case VOXEL_SLIDER_SURFACE_SNAP:
+                runtime.pCascadedShadow->m_fVoxelVisualizeSurfaceSnap = state.surfaceSnap;
+            break;
+            case VOXEL_SLIDER_HEIGHT_WARP:
+                runtime.pCascadedShadow->m_fStaticVoxelHeightWarp = state.heightWarp;
+            break;
+            case VOXEL_SLIDER_XY_FILL:
+                runtime.pCascadedShadow->m_fVoxelXYFootprintScale = state.xyFill;
+            break;
+            case VOXEL_SLIDER_YZ_FILL:
+                runtime.pCascadedShadow->m_fVoxelYZFootprintScale = state.yzFill;
+            break;
+            case VOXEL_SLIDER_TOP_COVERAGE:
+                runtime.pCascadedShadow->m_fStaticVoxelTopCoverage = state.topCoverage;
+            break;
+        }
 
-        case GUI_VOXEL_SLIDER_XY_FILL:
-            runtime.pCascadedShadow->m_fVoxelXYFootprintScale = m_state.xyFill;
-        break;
-
-        case GUI_VOXEL_SLIDER_YZ_FILL:
-            runtime.pCascadedShadow->m_fVoxelYZFootprintScale = m_state.yzFill;
-        break;
-
-        case GUI_VOXEL_SLIDER_TOP_COVERAGE:
-            runtime.pCascadedShadow->m_fStaticVoxelTopCoverage = m_state.topCoverage;
-        break;
+        if( state.requestStaticRevoxelization )
+        {
+            runtime.pCascadedShadow->InvalidateStaticVoxelization();
+            state.requestStaticRevoxelization = false;
+        }
     }
 
-    if( m_state.requestStaticRevoxelization )
+    void SyncVoxelSliderFromRuntime( VoxelSliderKind kind, Gui_VoxelPanelState& state, const GuiRuntimeContext& runtime )
     {
-        runtime.pCascadedShadow->InvalidateStaticVoxelization();
-        m_state.requestStaticRevoxelization = false;
-    }
-}
+        if( !runtime.pCascadedShadow )
+        {
+            return;
+        }
 
-void Gui_VoxelSliderStrategy::SyncFromRuntime( const GuiRuntimeContext& runtime )
-{
-    if( !runtime.pCascadedShadow )
-    {
-        return;
-    }
-
-    switch( m_kind )
-    {
-        case GUI_VOXEL_SLIDER_SURFACE_SNAP:
-            m_state.surfaceSnap = runtime.pCascadedShadow->m_fVoxelVisualizeSurfaceSnap;
-        break;
-
-        case GUI_VOXEL_SLIDER_HEIGHT_WARP:
-            m_state.heightWarp = runtime.pCascadedShadow->m_fStaticVoxelHeightWarp;
-        break;
-
-        case GUI_VOXEL_SLIDER_XY_FILL:
-            m_state.xyFill = runtime.pCascadedShadow->m_fVoxelXYFootprintScale;
-        break;
-
-        case GUI_VOXEL_SLIDER_YZ_FILL:
-            m_state.yzFill = runtime.pCascadedShadow->m_fVoxelYZFootprintScale;
-        break;
-
-        case GUI_VOXEL_SLIDER_TOP_COVERAGE:
-            m_state.topCoverage = runtime.pCascadedShadow->m_fStaticVoxelTopCoverage;
-        break;
-    }
-}
-
-Gui_VoxelToggleStrategy::Gui_VoxelToggleStrategy( GUI_VOXEL_TOGGLE_KIND kind, Gui_VoxelPanelState& state )
-    : m_kind( kind ),
-      m_state( state )
-{
-}
-
-const WCHAR* Gui_VoxelToggleStrategy::GetLabelText() const
-{
-    switch( m_kind )
-    {
-        case GUI_VOXEL_TOGGLE_VISUALIZE_VOXEL:
-            return L"Visualize Voxel";
-    }
-
-    return L"Unnamed Voxel Toggle";
-}
-
-bool Gui_VoxelToggleStrategy::ReadValue() const
-{
-    switch( m_kind )
-    {
-        case GUI_VOXEL_TOGGLE_VISUALIZE_VOXEL:
-            return m_state.visualizeVoxel;
-    }
-
-    return false;
-}
-
-void Gui_VoxelToggleStrategy::WriteValue( bool checked )
-{
-    switch( m_kind )
-    {
-        case GUI_VOXEL_TOGGLE_VISUALIZE_VOXEL:
-            m_state.visualizeVoxel = checked;
-        break;
-    }
-}
-
-void Gui_VoxelToggleStrategy::SyncToRuntime( GuiRuntimeContext& runtime )
-{
-    if( !runtime.pVisualizeVoxel )
-    {
-        return;
-    }
-
-    switch( m_kind )
-    {
-        case GUI_VOXEL_TOGGLE_VISUALIZE_VOXEL:
-            *runtime.pVisualizeVoxel = m_state.visualizeVoxel;
-        break;
-    }
-}
-
-void Gui_VoxelToggleStrategy::SyncFromRuntime( const GuiRuntimeContext& runtime )
-{
-    if( !runtime.pVisualizeVoxel )
-    {
-        return;
-    }
-
-    switch( m_kind )
-    {
-        case GUI_VOXEL_TOGGLE_VISUALIZE_VOXEL:
-            m_state.visualizeVoxel = *runtime.pVisualizeVoxel;
-        break;
+        switch( kind )
+        {
+            case VOXEL_SLIDER_SURFACE_SNAP:
+                state.surfaceSnap = runtime.pCascadedShadow->m_fVoxelVisualizeSurfaceSnap;
+            break;
+            case VOXEL_SLIDER_HEIGHT_WARP:
+                state.heightWarp = runtime.pCascadedShadow->m_fStaticVoxelHeightWarp;
+            break;
+            case VOXEL_SLIDER_XY_FILL:
+                state.xyFill = runtime.pCascadedShadow->m_fVoxelXYFootprintScale;
+            break;
+            case VOXEL_SLIDER_YZ_FILL:
+                state.yzFill = runtime.pCascadedShadow->m_fVoxelYZFootprintScale;
+            break;
+            case VOXEL_SLIDER_TOP_COVERAGE:
+                state.topCoverage = runtime.pCascadedShadow->m_fStaticVoxelTopCoverage;
+            break;
+        }
     }
 }
 
 Gui_VoxelPanel::Gui_VoxelPanel( const Gui_VoxelPanelIds& ids, Gui_VoxelPanelState& state )
     : m_ids( ids ),
-      m_state( state ),
-      m_surfaceSnapStrategy( GUI_VOXEL_SLIDER_SURFACE_SNAP, state ),
-      m_heightWarpStrategy( GUI_VOXEL_SLIDER_HEIGHT_WARP, state ),
-      m_xyFillStrategy( GUI_VOXEL_SLIDER_XY_FILL, state ),
-      m_yzFillStrategy( GUI_VOXEL_SLIDER_YZ_FILL, state ),
-      m_topCoverageStrategy( GUI_VOXEL_SLIDER_TOP_COVERAGE, state ),
-      m_visualizeVoxelStrategy( GUI_VOXEL_TOGGLE_VISUALIZE_VOXEL, state ),
-      m_visualizeVoxelControl( ids.visualizeVoxelCheckId, m_visualizeVoxelStrategy ),
-      m_surfaceSnapControl( ids.surfaceSnapTextId, ids.surfaceSnapSliderId, m_surfaceSnapStrategy ),
-      m_heightWarpControl( ids.heightWarpTextId, ids.heightWarpSliderId, m_heightWarpStrategy ),
-      m_xyFillControl( ids.xyFillTextId, ids.xyFillSliderId, m_xyFillStrategy ),
-      m_yzFillControl( ids.yzFillTextId, ids.yzFillSliderId, m_yzFillStrategy ),
-      m_topCoverageControl( ids.topCoverageTextId, ids.topCoverageSliderId, m_topCoverageStrategy )
+      m_state( state )
 {
 }
 
 void Gui_VoxelPanel::BuildControls( GuiControlFactory& factory )
 {
-    RegisterControl( m_visualizeVoxelControl );
-    RegisterControl( m_surfaceSnapControl );
-    RegisterControl( m_heightWarpControl );
-    RegisterControl( m_xyFillControl );
-    RegisterControl( m_yzFillControl );
-    RegisterControl( m_topCoverageControl );
+    AddCheckBox(
+        factory,
+        m_ids.visualizeVoxelCheckId,
+        L"Visualize Voxel",
+        [this]() { return m_state.visualizeVoxel; },
+        [this]( bool checked ) { m_state.visualizeVoxel = checked; },
+        [this]( GuiRuntimeContext& runtime )
+        {
+            if( runtime.pVisualizeVoxel )
+            {
+                *runtime.pVisualizeVoxel = m_state.visualizeVoxel;
+            }
+        },
+        [this]( const GuiRuntimeContext& runtime )
+        {
+            if( runtime.pVisualizeVoxel )
+            {
+                m_state.visualizeVoxel = *runtime.pVisualizeVoxel;
+            }
+        } );
 
-    factory.Add( m_visualizeVoxelControl );
-    factory.Add( m_surfaceSnapControl );
-    factory.Add( m_heightWarpControl );
-    factory.Add( m_xyFillControl );
-    factory.Add( m_yzFillControl );
-    factory.Add( m_topCoverageControl );
+    const auto addVoxelSlider =
+        [this, &factory]( INT textId, INT sliderId, VoxelSliderKind kind )
+    {
+        AddSlider(
+            factory,
+            textId,
+            sliderId,
+            GetVoxelSliderMinValue( kind ),
+            GetVoxelSliderMaxValue( kind ),
+            [this, kind]() { return ReadVoxelSliderValue( kind, m_state ); },
+            [this, kind]( INT rawValue, UINT nEvent ) { WriteVoxelSliderValue( kind, m_state, rawValue, nEvent ); },
+            [kind]( INT rawValue ) { return FormatVoxelSliderCaption( kind, rawValue ); },
+            [this, kind]( GuiRuntimeContext& runtime ) { SyncVoxelSliderToRuntime( kind, m_state, runtime ); },
+            [this, kind]( const GuiRuntimeContext& runtime ) { SyncVoxelSliderFromRuntime( kind, m_state, runtime ); } );
+    };
+
+    addVoxelSlider( m_ids.surfaceSnapTextId, m_ids.surfaceSnapSliderId, VOXEL_SLIDER_SURFACE_SNAP );
+    addVoxelSlider( m_ids.heightWarpTextId, m_ids.heightWarpSliderId, VOXEL_SLIDER_HEIGHT_WARP );
+    addVoxelSlider( m_ids.xyFillTextId, m_ids.xyFillSliderId, VOXEL_SLIDER_XY_FILL );
+    addVoxelSlider( m_ids.yzFillTextId, m_ids.yzFillSliderId, VOXEL_SLIDER_YZ_FILL );
+    addVoxelSlider( m_ids.topCoverageTextId, m_ids.topCoverageSliderId, VOXEL_SLIDER_TOP_COVERAGE );
 }

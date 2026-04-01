@@ -23,38 +23,6 @@ struct Gui_SelectorPanelState
     SCENE_SELECTION selectedScene;
 };
 
-class Gui_CategoryComboStrategy : public Gui_ComboBoxStrategy
-{
-public:
-    Gui_CategoryComboStrategy( Gui_SelectorPanelState& state );
-
-    virtual const WCHAR* GetLabelText() const;
-    virtual void Populate( CDXUTComboBox& comboBox ) const;
-    virtual void RefreshSelection( CDXUTComboBox& comboBox ) const;
-    virtual void WriteSelection( CDXUTComboBox& comboBox );
-    virtual void SyncToRuntime( GuiRuntimeContext& runtime );
-    virtual void SyncFromRuntime( const GuiRuntimeContext& runtime );
-
-private:
-    Gui_SelectorPanelState& m_state;
-};
-
-class Gui_SceneComboStrategy : public Gui_ComboBoxStrategy
-{
-public:
-    Gui_SceneComboStrategy( Gui_SelectorPanelState& state );
-
-    virtual const WCHAR* GetLabelText() const;
-    virtual void Populate( CDXUTComboBox& comboBox ) const;
-    virtual void RefreshSelection( CDXUTComboBox& comboBox ) const;
-    virtual void WriteSelection( CDXUTComboBox& comboBox );
-    virtual void SyncToRuntime( GuiRuntimeContext& runtime );
-    virtual void SyncFromRuntime( const GuiRuntimeContext& runtime );
-
-private:
-    Gui_SelectorPanelState& m_state;
-};
-
 class Gui_SelectorPanel : public GuiPanelBase
 {
 public:
@@ -66,8 +34,4 @@ protected:
 private:
     Gui_SelectorPanelIds m_ids;
     Gui_SelectorPanelState& m_state;
-    Gui_CategoryComboStrategy m_categoryStrategy;
-    Gui_SceneComboStrategy m_sceneStrategy;
-    Gui_ComboBoxControl m_categoryControl;
-    Gui_ComboBoxControl m_sceneControl;
 };

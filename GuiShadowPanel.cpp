@@ -1,7 +1,6 @@
 #include "DXUT.h"
 #include "GuiShadowPanel.h"
 #include "CascadedShadowsManager.h"
-#include <wchar.h>
 
 namespace
 {
@@ -15,6 +14,32 @@ namespace
         D3DCOLOR_ARGB( 255, 255,   0, 255 ),
         D3DCOLOR_ARGB( 255, 255, 128,   0 ),
         D3DCOLOR_ARGB( 255, 180, 180, 180 )
+    };
+
+    enum ShadowSliderKind
+    {
+        SHADOW_SLIDER_BUFFER_SIZE,
+        SHADOW_SLIDER_PCF_SIZE,
+        SHADOW_SLIDER_PCF_OFFSET,
+        SHADOW_SLIDER_BLEND_AMOUNT
+    };
+
+    enum ShadowToggleKind
+    {
+        SHADOW_TOGGLE_VISUALIZE_CASCADES,
+        SHADOW_TOGGLE_BLEND_ENABLED,
+        SHADOW_TOGGLE_DERIVATIVE_OFFSET,
+        SHADOW_TOGGLE_FIT_LIGHT_TO_TEXELS
+    };
+
+    enum ShadowComboKind
+    {
+        SHADOW_COMBO_DEPTH_FORMAT,
+        SHADOW_COMBO_SELECTED_CAMERA,
+        SHADOW_COMBO_CASCADE_LEVELS,
+        SHADOW_COMBO_FIT_TO_CASCADE,
+        SHADOW_COMBO_FIT_TO_NEARFAR,
+        SHADOW_COMBO_CASCADE_SELECTION
     };
 
     void ClampShadowBufferSize( Gui_ShadowPanelState& state )
@@ -125,703 +150,703 @@ namespace
 
         NormalizeCascadeSelections( state );
     }
-}
 
-Gui_ShadowSliderStrategy::Gui_ShadowSliderStrategy( GUI_SHADOW_SLIDER_KIND kind, Gui_ShadowPanelState& state )
-    : m_kind( kind ),
-      m_state( state )
-{
-}
-
-INT Gui_ShadowSliderStrategy::GetMinValue() const
-{
-    switch( m_kind )
+    INT GetShadowSliderMinValue( ShadowSliderKind kind )
     {
-        case GUI_SHADOW_SLIDER_BUFFER_SIZE:
-            return 1;
-        case GUI_SHADOW_SLIDER_PCF_SIZE:
-            return 1;
-        case GUI_SHADOW_SLIDER_PCF_OFFSET:
-            return 0;
-        case GUI_SHADOW_SLIDER_BLEND_AMOUNT:
-            return 0;
+        switch( kind )
+        {
+            case SHADOW_SLIDER_BUFFER_SIZE:
+                return 1;
+            case SHADOW_SLIDER_PCF_SIZE:
+                return 1;
+            case SHADOW_SLIDER_PCF_OFFSET:
+                return 0;
+            case SHADOW_SLIDER_BLEND_AMOUNT:
+                return 0;
+        }
+
+        return 0;
     }
 
-    return 0;
-}
-
-INT Gui_ShadowSliderStrategy::GetMaxValue() const
-{
-    switch( m_kind )
+    INT GetShadowSliderMaxValue( ShadowSliderKind kind )
     {
-        case GUI_SHADOW_SLIDER_BUFFER_SIZE:
-            return 128;
-        case GUI_SHADOW_SLIDER_PCF_SIZE:
-            return 16;
-        case GUI_SHADOW_SLIDER_PCF_OFFSET:
-            return 50;
-        case GUI_SHADOW_SLIDER_BLEND_AMOUNT:
-            return 100;
+        switch( kind )
+        {
+            case SHADOW_SLIDER_BUFFER_SIZE:
+                return 128;
+            case SHADOW_SLIDER_PCF_SIZE:
+                return 16;
+            case SHADOW_SLIDER_PCF_OFFSET:
+                return 50;
+            case SHADOW_SLIDER_BLEND_AMOUNT:
+                return 100;
+        }
+
+        return 100;
     }
 
-    return 100;
-}
-
-INT Gui_ShadowSliderStrategy::ReadValue() const
-{
-    switch( m_kind )
+    INT ReadShadowSliderValue( ShadowSliderKind kind, const Gui_ShadowPanelState& state )
     {
-        case GUI_SHADOW_SLIDER_BUFFER_SIZE:
-            return m_state.shadowBufferSize / 32;
-        case GUI_SHADOW_SLIDER_PCF_SIZE:
-            return ( m_state.pcfBlurSize + 1 ) / 2;
-        case GUI_SHADOW_SLIDER_PCF_OFFSET:
-            return ( INT )( m_state.pcfOffset * 1000.0f );
-        case GUI_SHADOW_SLIDER_BLEND_AMOUNT:
-            return ( INT )( m_state.blendAmount * 2000.0f );
+        switch( kind )
+        {
+            case SHADOW_SLIDER_BUFFER_SIZE:
+                return state.shadowBufferSize / 32;
+            case SHADOW_SLIDER_PCF_SIZE:
+                return ( state.pcfBlurSize + 1 ) / 2;
+            case SHADOW_SLIDER_PCF_OFFSET:
+                return (INT)( state.pcfOffset * 1000.0f );
+            case SHADOW_SLIDER_BLEND_AMOUNT:
+                return (INT)( state.blendAmount * 2000.0f );
+        }
+
+        return 0;
     }
 
-    return 0;
-}
-
-void Gui_ShadowSliderStrategy::WriteValue( INT rawValue, UINT )
-{
-    switch( m_kind )
+    void WriteShadowSliderValue( ShadowSliderKind kind, Gui_ShadowPanelState& state, INT rawValue )
     {
-        case GUI_SHADOW_SLIDER_BUFFER_SIZE:
-            m_state.shadowBufferSize = rawValue * 32;
-            ClampShadowBufferSize( m_state );
-        break;
+        switch( kind )
+        {
+            case SHADOW_SLIDER_BUFFER_SIZE:
+                state.shadowBufferSize = rawValue * 32;
+                ClampShadowBufferSize( state );
+            break;
 
-        case GUI_SHADOW_SLIDER_PCF_SIZE:
-            m_state.pcfBlurSize = ( rawValue * 2 ) - 1;
-        break;
+            case SHADOW_SLIDER_PCF_SIZE:
+                state.pcfBlurSize = ( rawValue * 2 ) - 1;
+            break;
 
-        case GUI_SHADOW_SLIDER_PCF_OFFSET:
-            m_state.pcfOffset = rawValue * 0.001f;
-        break;
+            case SHADOW_SLIDER_PCF_OFFSET:
+                state.pcfOffset = rawValue * 0.001f;
+            break;
 
-        case GUI_SHADOW_SLIDER_BLEND_AMOUNT:
-            m_state.blendAmount = rawValue * 0.0005f;
-        break;
-    }
-}
-
-void Gui_ShadowSliderStrategy::FormatCaption( INT rawValue, WCHAR* text, size_t textCount ) const
-{
-    switch( m_kind )
-    {
-        case GUI_SHADOW_SLIDER_BUFFER_SIZE:
-            swprintf_s( text, textCount, L"Texture Size: %d", rawValue * 32 );
-        break;
-
-        case GUI_SHADOW_SLIDER_PCF_SIZE:
-            swprintf_s( text, textCount, L"PCF Blur: %d", ( rawValue * 2 ) - 1 );
-        break;
-
-        case GUI_SHADOW_SLIDER_PCF_OFFSET:
-            swprintf_s( text, textCount, L"Offset: %.3f", rawValue * 0.001f );
-        break;
-
-        case GUI_SHADOW_SLIDER_BLEND_AMOUNT:
-            swprintf_s( text, textCount, L"Cascade Blur %.3f", rawValue * 0.0005f );
-        break;
-    }
-}
-
-void Gui_ShadowSliderStrategy::SyncToRuntime( GuiRuntimeContext& runtime )
-{
-    switch( m_kind )
-    {
-        case GUI_SHADOW_SLIDER_BUFFER_SIZE:
-            if( runtime.pCascadeConfig )
-            {
-                runtime.pCascadeConfig->m_iBufferSize = m_state.shadowBufferSize;
-            }
-        break;
-
-        case GUI_SHADOW_SLIDER_PCF_SIZE:
-            if( runtime.pCascadedShadow )
-            {
-                runtime.pCascadedShadow->m_iPCFBlurSize = m_state.pcfBlurSize;
-            }
-        break;
-
-        case GUI_SHADOW_SLIDER_PCF_OFFSET:
-            if( runtime.pCascadedShadow )
-            {
-                runtime.pCascadedShadow->m_fPCFOffset = m_state.pcfOffset;
-            }
-        break;
-
-        case GUI_SHADOW_SLIDER_BLEND_AMOUNT:
-            if( runtime.pCascadedShadow )
-            {
-                runtime.pCascadedShadow->m_fBlurBetweenCascadesAmount = m_state.blendAmount;
-            }
-        break;
-    }
-}
-
-void Gui_ShadowSliderStrategy::SyncFromRuntime( const GuiRuntimeContext& runtime )
-{
-    switch( m_kind )
-    {
-        case GUI_SHADOW_SLIDER_BUFFER_SIZE:
-            if( runtime.pCascadeConfig )
-            {
-                m_state.shadowBufferSize = runtime.pCascadeConfig->m_iBufferSize;
-            }
-        break;
-
-        case GUI_SHADOW_SLIDER_PCF_SIZE:
-            if( runtime.pCascadedShadow )
-            {
-                m_state.pcfBlurSize = runtime.pCascadedShadow->m_iPCFBlurSize;
-            }
-        break;
-
-        case GUI_SHADOW_SLIDER_PCF_OFFSET:
-            if( runtime.pCascadedShadow )
-            {
-                m_state.pcfOffset = runtime.pCascadedShadow->m_fPCFOffset;
-            }
-        break;
-
-        case GUI_SHADOW_SLIDER_BLEND_AMOUNT:
-            if( runtime.pCascadedShadow )
-            {
-                m_state.blendAmount = runtime.pCascadedShadow->m_fBlurBetweenCascadesAmount;
-            }
-        break;
-    }
-}
-
-Gui_ShadowToggleStrategy::Gui_ShadowToggleStrategy( GUI_SHADOW_TOGGLE_KIND kind, Gui_ShadowPanelState& state )
-    : m_kind( kind ),
-      m_state( state )
-{
-}
-
-const WCHAR* Gui_ShadowToggleStrategy::GetLabelText() const
-{
-    switch( m_kind )
-    {
-        case GUI_SHADOW_TOGGLE_VISUALIZE_CASCADES:
-            return L"Visualize Cascades";
-        case GUI_SHADOW_TOGGLE_BLEND_ENABLED:
-            return L"Blend Between Cascades";
-        case GUI_SHADOW_TOGGLE_DERIVATIVE_OFFSET:
-            return L"DDX, DDY offset";
-        case GUI_SHADOW_TOGGLE_FIT_LIGHT_TO_TEXELS:
-            return L"Fit Light to Texels";
+            case SHADOW_SLIDER_BLEND_AMOUNT:
+                state.blendAmount = rawValue * 0.0005f;
+            break;
+        }
     }
 
-    return L"Unnamed Shadow Toggle";
-}
-
-bool Gui_ShadowToggleStrategy::ReadValue() const
-{
-    switch( m_kind )
+    std::wstring FormatShadowSliderCaption( ShadowSliderKind kind, INT rawValue )
     {
-        case GUI_SHADOW_TOGGLE_VISUALIZE_CASCADES:
-            return m_state.visualizeCascades;
-        case GUI_SHADOW_TOGGLE_BLEND_ENABLED:
-            return m_state.blendBetweenMaps;
-        case GUI_SHADOW_TOGGLE_DERIVATIVE_OFFSET:
-            return m_state.derivativeOffset;
-        case GUI_SHADOW_TOGGLE_FIT_LIGHT_TO_TEXELS:
-            return m_state.fitLightToTexels;
+        WCHAR text[128] = {};
+
+        switch( kind )
+        {
+            case SHADOW_SLIDER_BUFFER_SIZE:
+                swprintf_s( text, L"Texture Size: %d", rawValue * 32 );
+            break;
+
+            case SHADOW_SLIDER_PCF_SIZE:
+                swprintf_s( text, L"PCF Blur: %d", ( rawValue * 2 ) - 1 );
+            break;
+
+            case SHADOW_SLIDER_PCF_OFFSET:
+                swprintf_s( text, L"Offset: %.3f", rawValue * 0.001f );
+            break;
+
+            case SHADOW_SLIDER_BLEND_AMOUNT:
+                swprintf_s( text, L"Cascade Blur %.3f", rawValue * 0.0005f );
+            break;
+        }
+
+        return text;
     }
 
-    return false;
-}
-
-void Gui_ShadowToggleStrategy::WriteValue( bool checked )
-{
-    switch( m_kind )
+    void SyncShadowSliderToRuntime( ShadowSliderKind kind, Gui_ShadowPanelState& state, GuiRuntimeContext& runtime )
     {
-        case GUI_SHADOW_TOGGLE_VISUALIZE_CASCADES:
-            m_state.visualizeCascades = checked;
-        break;
+        switch( kind )
+        {
+            case SHADOW_SLIDER_BUFFER_SIZE:
+                if( runtime.pCascadeConfig )
+                {
+                    runtime.pCascadeConfig->m_iBufferSize = state.shadowBufferSize;
+                }
+            break;
 
-        case GUI_SHADOW_TOGGLE_BLEND_ENABLED:
-            m_state.blendBetweenMaps = checked;
-        break;
+            case SHADOW_SLIDER_PCF_SIZE:
+                if( runtime.pCascadedShadow )
+                {
+                    runtime.pCascadedShadow->m_iPCFBlurSize = state.pcfBlurSize;
+                }
+            break;
 
-        case GUI_SHADOW_TOGGLE_DERIVATIVE_OFFSET:
-            m_state.derivativeOffset = checked;
-        break;
+            case SHADOW_SLIDER_PCF_OFFSET:
+                if( runtime.pCascadedShadow )
+                {
+                    runtime.pCascadedShadow->m_fPCFOffset = state.pcfOffset;
+                }
+            break;
 
-        case GUI_SHADOW_TOGGLE_FIT_LIGHT_TO_TEXELS:
-            m_state.fitLightToTexels = checked;
-        break;
-    }
-}
-
-void Gui_ShadowToggleStrategy::SyncToRuntime( GuiRuntimeContext& runtime )
-{
-    switch( m_kind )
-    {
-        case GUI_SHADOW_TOGGLE_VISUALIZE_CASCADES:
-            if( runtime.pVisualizeCascades )
-            {
-                *runtime.pVisualizeCascades = m_state.visualizeCascades;
-            }
-        break;
-
-        case GUI_SHADOW_TOGGLE_BLEND_ENABLED:
-            if( runtime.pCascadedShadow )
-            {
-                runtime.pCascadedShadow->m_iBlurBetweenCascades = m_state.blendBetweenMaps ? 1 : 0;
-            }
-        break;
-
-        case GUI_SHADOW_TOGGLE_DERIVATIVE_OFFSET:
-            if( runtime.pCascadedShadow )
-            {
-                runtime.pCascadedShadow->m_iDerivativeBasedOffset = m_state.derivativeOffset ? 1 : 0;
-            }
-        break;
-
-        case GUI_SHADOW_TOGGLE_FIT_LIGHT_TO_TEXELS:
-            if( runtime.pMoveLightTexelSize )
-            {
-                *runtime.pMoveLightTexelSize = m_state.fitLightToTexels;
-            }
-            if( runtime.pCascadedShadow )
-            {
-                runtime.pCascadedShadow->m_bMoveLightTexelSize = m_state.fitLightToTexels;
-            }
-        break;
-    }
-}
-
-void Gui_ShadowToggleStrategy::SyncFromRuntime( const GuiRuntimeContext& runtime )
-{
-    switch( m_kind )
-    {
-        case GUI_SHADOW_TOGGLE_VISUALIZE_CASCADES:
-            if( runtime.pVisualizeCascades )
-            {
-                m_state.visualizeCascades = *runtime.pVisualizeCascades;
-            }
-        break;
-
-        case GUI_SHADOW_TOGGLE_BLEND_ENABLED:
-            if( runtime.pCascadedShadow )
-            {
-                m_state.blendBetweenMaps = runtime.pCascadedShadow->m_iBlurBetweenCascades != 0;
-            }
-        break;
-
-        case GUI_SHADOW_TOGGLE_DERIVATIVE_OFFSET:
-            if( runtime.pCascadedShadow )
-            {
-                m_state.derivativeOffset = runtime.pCascadedShadow->m_iDerivativeBasedOffset != 0;
-            }
-        break;
-
-        case GUI_SHADOW_TOGGLE_FIT_LIGHT_TO_TEXELS:
-            if( runtime.pMoveLightTexelSize )
-            {
-                m_state.fitLightToTexels = *runtime.pMoveLightTexelSize;
-            }
-            else if( runtime.pCascadedShadow )
-            {
-                m_state.fitLightToTexels = runtime.pCascadedShadow->m_bMoveLightTexelSize ? true : false;
-            }
-        break;
-    }
-}
-
-Gui_ShadowComboStrategy::Gui_ShadowComboStrategy( GUI_SHADOW_COMBO_KIND kind, Gui_ShadowPanelState& state )
-    : m_kind( kind ),
-      m_state( state )
-{
-}
-
-const WCHAR* Gui_ShadowComboStrategy::GetLabelText() const
-{
-    switch( m_kind )
-    {
-        case GUI_SHADOW_COMBO_DEPTH_FORMAT:
-            return L"Depth Buffer";
-        case GUI_SHADOW_COMBO_SELECTED_CAMERA:
-            return L"Camera";
-        case GUI_SHADOW_COMBO_CASCADE_LEVELS:
-            return L"Cascade Levels";
-        case GUI_SHADOW_COMBO_FIT_TO_CASCADE:
-            return L"Projection Fit";
-        case GUI_SHADOW_COMBO_FIT_TO_NEARFAR:
-            return L"Near/Far Fit";
-        case GUI_SHADOW_COMBO_CASCADE_SELECTION:
-            return L"Cascade Selection";
+            case SHADOW_SLIDER_BLEND_AMOUNT:
+                if( runtime.pCascadedShadow )
+                {
+                    runtime.pCascadedShadow->m_fBlurBetweenCascadesAmount = state.blendAmount;
+                }
+            break;
+        }
     }
 
-    return L"Shadow Setting";
-}
-
-void Gui_ShadowComboStrategy::Populate( CDXUTComboBox& comboBox ) const
-{
-    comboBox.RemoveAllItems();
-
-    switch( m_kind )
+    void SyncShadowSliderFromRuntime( ShadowSliderKind kind, Gui_ShadowPanelState& state, const GuiRuntimeContext& runtime )
     {
-        case GUI_SHADOW_COMBO_DEPTH_FORMAT:
-            comboBox.AddItem( L"32 bit Buffer", ULongToPtr( CASCADE_DXGI_FORMAT_R32_TYPELESS ) );
-            comboBox.AddItem( L"16 bit Buffer", ULongToPtr( CASCADE_DXGI_FORMAT_R16_TYPELESS ) );
-            comboBox.AddItem( L"24 bit Buffer", ULongToPtr( CASCADE_DXGI_FORMAT_R24G8_TYPELESS ) );
-        break;
+        switch( kind )
+        {
+            case SHADOW_SLIDER_BUFFER_SIZE:
+                if( runtime.pCascadeConfig )
+                {
+                    state.shadowBufferSize = runtime.pCascadeConfig->m_iBufferSize;
+                }
+            break;
 
-        case GUI_SHADOW_COMBO_SELECTED_CAMERA:
-            comboBox.AddItem( L"Eye Camera", ULongToPtr( EYE_CAMERA ) );
-            comboBox.AddItem( L"Light Camera", ULongToPtr( LIGHT_CAMERA ) );
-            for( INT index = 0; index < m_state.cascadeLevels; ++index )
-            {
-                WCHAR text[64];
-                swprintf_s( text, L"Cascade Cam %d", index + 1 );
-                comboBox.AddItem( text, ULongToPtr( ORTHO_CAMERA1 + index ) );
-            }
-        break;
+            case SHADOW_SLIDER_PCF_SIZE:
+                if( runtime.pCascadedShadow )
+                {
+                    state.pcfBlurSize = runtime.pCascadedShadow->m_iPCFBlurSize;
+                }
+            break;
 
-        case GUI_SHADOW_COMBO_CASCADE_LEVELS:
-            for( INT index = 1; index <= MAX_CASCADES; ++index )
-            {
-                WCHAR text[32];
-                swprintf_s( text, L"%d Level", index );
-                comboBox.AddItem( text, ULongToPtr( index ) );
-            }
-        break;
+            case SHADOW_SLIDER_PCF_OFFSET:
+                if( runtime.pCascadedShadow )
+                {
+                    state.pcfOffset = runtime.pCascadedShadow->m_fPCFOffset;
+                }
+            break;
 
-        case GUI_SHADOW_COMBO_FIT_TO_CASCADE:
-            comboBox.AddItem( L"Fit Scene", ULongToPtr( FIT_TO_SCENE ) );
-            comboBox.AddItem( L"Fit Cascades", ULongToPtr( FIT_TO_CASCADES ) );
-        break;
-
-        case GUI_SHADOW_COMBO_FIT_TO_NEARFAR:
-            comboBox.AddItem( L"AABB/Scene NearFar", ULongToPtr( FIT_NEARFAR_SCENE_AABB ) );
-            comboBox.AddItem( L"Pancaking", ULongToPtr( FIT_NEARFAR_PANCAKING ) );
-            comboBox.AddItem( L"0:1 NearFar", ULongToPtr( FIT_NEARFAR_ZERO_ONE ) );
-            comboBox.AddItem( L"AABB NearFar", ULongToPtr( FIT_NEARFAR_AABB ) );
-        break;
-
-        case GUI_SHADOW_COMBO_CASCADE_SELECTION:
-            comboBox.AddItem( L"Map Selection", ULongToPtr( CASCADE_SELECTION_MAP ) );
-            comboBox.AddItem( L"Interval Selection", ULongToPtr( CASCADE_SELECTION_INTERVAL ) );
-        break;
-    }
-}
-
-void Gui_ShadowComboStrategy::RefreshSelection( CDXUTComboBox& comboBox ) const
-{
-    switch( m_kind )
-    {
-        case GUI_SHADOW_COMBO_DEPTH_FORMAT:
-            comboBox.SetSelectedByData( ULongToPtr( m_state.depthBufferFormat ) );
-        break;
-
-        case GUI_SHADOW_COMBO_SELECTED_CAMERA:
-            comboBox.SetSelectedByData( ULongToPtr( m_state.selectedCamera ) );
-        break;
-
-        case GUI_SHADOW_COMBO_CASCADE_LEVELS:
-            comboBox.SetSelectedByData( ULongToPtr( m_state.cascadeLevels ) );
-        break;
-
-        case GUI_SHADOW_COMBO_FIT_TO_CASCADE:
-            comboBox.SetSelectedByData( ULongToPtr( m_state.fitToCascades ) );
-        break;
-
-        case GUI_SHADOW_COMBO_FIT_TO_NEARFAR:
-            comboBox.SetSelectedByData( ULongToPtr( m_state.fitToNearFar ) );
-        break;
-
-        case GUI_SHADOW_COMBO_CASCADE_SELECTION:
-            comboBox.SetSelectedByData( ULongToPtr( m_state.cascadeSelection ) );
-        break;
-    }
-}
-
-void Gui_ShadowComboStrategy::WriteSelection( CDXUTComboBox& comboBox )
-{
-    switch( m_kind )
-    {
-        case GUI_SHADOW_COMBO_DEPTH_FORMAT:
-            m_state.depthBufferFormat = ( SHADOW_TEXTURE_FORMAT )PtrToUlong( comboBox.GetSelectedData() );
-        break;
-
-        case GUI_SHADOW_COMBO_SELECTED_CAMERA:
-            m_state.selectedCamera = ( INT )PtrToUlong( comboBox.GetSelectedData() );
-            ClampSelectedCamera( m_state );
-        break;
-
-        case GUI_SHADOW_COMBO_CASCADE_LEVELS:
-            m_state.cascadeLevels = ( INT )PtrToUlong( comboBox.GetSelectedData() );
-            NormalizeShadowState( m_state );
-        break;
-
-        case GUI_SHADOW_COMBO_FIT_TO_CASCADE:
-            m_state.fitToCascades = ( FIT_PROJECTION_TO_CASCADES )PtrToUlong( comboBox.GetSelectedData() );
-        break;
-
-        case GUI_SHADOW_COMBO_FIT_TO_NEARFAR:
-            m_state.fitToNearFar = ( FIT_TO_NEAR_FAR )PtrToUlong( comboBox.GetSelectedData() );
-            NormalizeCascadeSelections( m_state );
-        break;
-
-        case GUI_SHADOW_COMBO_CASCADE_SELECTION:
-            m_state.cascadeSelection = ( CASCADE_SELECTION )PtrToUlong( comboBox.GetSelectedData() );
-            if( m_state.cascadeSelection == CASCADE_SELECTION_MAP &&
-                m_state.fitToNearFar == FIT_NEARFAR_PANCAKING )
-            {
-                m_state.fitToNearFar = FIT_NEARFAR_SCENE_AABB;
-            }
-            NormalizeCascadeSelections( m_state );
-        break;
-    }
-}
-
-void Gui_ShadowComboStrategy::SyncToRuntime( GuiRuntimeContext& runtime )
-{
-    switch( m_kind )
-    {
-        case GUI_SHADOW_COMBO_DEPTH_FORMAT:
-            if( runtime.pCascadeConfig )
-            {
-                runtime.pCascadeConfig->m_ShadowBufferFormat = m_state.depthBufferFormat;
-            }
-        break;
-
-        case GUI_SHADOW_COMBO_SELECTED_CAMERA:
-            if( runtime.ppActiveCamera )
-            {
-                *runtime.ppActiveCamera = ( m_state.selectedCamera < LIGHT_CAMERA ) ? runtime.pViewerCamera : runtime.pLightCamera;
-            }
-            if( runtime.pCascadedShadow )
-            {
-                runtime.pCascadedShadow->m_eSelectedCamera = ( CAMERA_SELECTION )m_state.selectedCamera;
-            }
-        break;
-
-        case GUI_SHADOW_COMBO_CASCADE_LEVELS:
-            if( runtime.pCascadeConfig )
-            {
-                runtime.pCascadeConfig->m_nCascadeLevels = m_state.cascadeLevels;
-            }
-        break;
-
-        case GUI_SHADOW_COMBO_FIT_TO_CASCADE:
-            if( runtime.pCascadedShadow )
-            {
-                runtime.pCascadedShadow->m_eSelectedCascadesFit = m_state.fitToCascades;
-            }
-        break;
-
-        case GUI_SHADOW_COMBO_FIT_TO_NEARFAR:
-            if( runtime.pCascadedShadow )
-            {
-                runtime.pCascadedShadow->m_eSelectedNearFarFit = m_state.fitToNearFar;
-            }
-        break;
-
-        case GUI_SHADOW_COMBO_CASCADE_SELECTION:
-            if( runtime.pCascadedShadow )
-            {
-                runtime.pCascadedShadow->m_eSelectedCascadeSelection = m_state.cascadeSelection;
-            }
-        break;
-    }
-}
-
-void Gui_ShadowComboStrategy::SyncFromRuntime( const GuiRuntimeContext& runtime )
-{
-    switch( m_kind )
-    {
-        case GUI_SHADOW_COMBO_DEPTH_FORMAT:
-            if( runtime.pCascadeConfig )
-            {
-                m_state.depthBufferFormat = runtime.pCascadeConfig->m_ShadowBufferFormat;
-            }
-        break;
-
-        case GUI_SHADOW_COMBO_SELECTED_CAMERA:
-            if( runtime.pCascadedShadow )
-            {
-                m_state.selectedCamera = runtime.pCascadedShadow->m_eSelectedCamera;
-            }
-        break;
-
-        case GUI_SHADOW_COMBO_CASCADE_LEVELS:
-            if( runtime.pCascadeConfig )
-            {
-                m_state.cascadeLevels = runtime.pCascadeConfig->m_nCascadeLevels;
-            }
-        break;
-
-        case GUI_SHADOW_COMBO_FIT_TO_CASCADE:
-            if( runtime.pCascadedShadow )
-            {
-                m_state.fitToCascades = runtime.pCascadedShadow->m_eSelectedCascadesFit;
-            }
-        break;
-
-        case GUI_SHADOW_COMBO_FIT_TO_NEARFAR:
-            if( runtime.pCascadedShadow )
-            {
-                m_state.fitToNearFar = runtime.pCascadedShadow->m_eSelectedNearFarFit;
-            }
-        break;
-
-        case GUI_SHADOW_COMBO_CASCADE_SELECTION:
-            if( runtime.pCascadedShadow )
-            {
-                m_state.cascadeSelection = runtime.pCascadedShadow->m_eSelectedCascadeSelection;
-            }
-        break;
+            case SHADOW_SLIDER_BLEND_AMOUNT:
+                if( runtime.pCascadedShadow )
+                {
+                    state.blendAmount = runtime.pCascadedShadow->m_fBlurBetweenCascadesAmount;
+                }
+            break;
+        }
     }
 
-    NormalizeShadowState( m_state );
-}
-
-Gui_ShadowCascadeSliderStrategy::Gui_ShadowCascadeSliderStrategy( INT cascadeIndex, Gui_ShadowPanelState& state )
-    : m_cascadeIndex( cascadeIndex ),
-      m_state( state )
-{
-}
-
-INT Gui_ShadowCascadeSliderStrategy::GetMinValue() const
-{
-    return 0;
-}
-
-INT Gui_ShadowCascadeSliderStrategy::GetMaxValue() const
-{
-    return 100;
-}
-
-INT Gui_ShadowCascadeSliderStrategy::ReadValue() const
-{
-    return m_state.cascadePartitions[m_cascadeIndex];
-}
-
-void Gui_ShadowCascadeSliderStrategy::WriteValue( INT rawValue, UINT )
-{
-    m_state.cascadePartitions[m_cascadeIndex] = rawValue;
-    NormalizeCascadePartitions( m_state, m_cascadeIndex );
-}
-
-void Gui_ShadowCascadeSliderStrategy::FormatCaption( INT rawValue, WCHAR* text, size_t textCount ) const
-{
-    swprintf_s( text, textCount, L"L%d: %d", m_cascadeIndex + 1, rawValue );
-}
-
-void Gui_ShadowCascadeSliderStrategy::SyncToRuntime( GuiRuntimeContext& runtime )
-{
-    if( runtime.pCascadedShadow )
+    const WCHAR* GetShadowToggleLabel( ShadowToggleKind kind )
     {
-        runtime.pCascadedShadow->m_iCascadePartitionsZeroToOne[m_cascadeIndex] = m_state.cascadePartitions[m_cascadeIndex];
+        switch( kind )
+        {
+            case SHADOW_TOGGLE_VISUALIZE_CASCADES:
+                return L"Visualize Cascades";
+            case SHADOW_TOGGLE_BLEND_ENABLED:
+                return L"Blend Between Cascades";
+            case SHADOW_TOGGLE_DERIVATIVE_OFFSET:
+                return L"DDX, DDY offset";
+            case SHADOW_TOGGLE_FIT_LIGHT_TO_TEXELS:
+                return L"Fit Light to Texels";
+        }
+
+        return L"Unnamed Shadow Toggle";
     }
-}
 
-void Gui_ShadowCascadeSliderStrategy::SyncFromRuntime( const GuiRuntimeContext& runtime )
-{
-    if( runtime.pCascadedShadow )
+    bool ReadShadowToggleValue( ShadowToggleKind kind, const Gui_ShadowPanelState& state )
     {
-        m_state.cascadePartitions[m_cascadeIndex] = runtime.pCascadedShadow->m_iCascadePartitionsZeroToOne[m_cascadeIndex];
+        switch( kind )
+        {
+            case SHADOW_TOGGLE_VISUALIZE_CASCADES:
+                return state.visualizeCascades;
+            case SHADOW_TOGGLE_BLEND_ENABLED:
+                return state.blendBetweenMaps;
+            case SHADOW_TOGGLE_DERIVATIVE_OFFSET:
+                return state.derivativeOffset;
+            case SHADOW_TOGGLE_FIT_LIGHT_TO_TEXELS:
+                return state.fitLightToTexels;
+        }
+
+        return false;
+    }
+
+    void WriteShadowToggleValue( ShadowToggleKind kind, Gui_ShadowPanelState& state, bool checked )
+    {
+        switch( kind )
+        {
+            case SHADOW_TOGGLE_VISUALIZE_CASCADES:
+                state.visualizeCascades = checked;
+            break;
+
+            case SHADOW_TOGGLE_BLEND_ENABLED:
+                state.blendBetweenMaps = checked;
+            break;
+
+            case SHADOW_TOGGLE_DERIVATIVE_OFFSET:
+                state.derivativeOffset = checked;
+            break;
+
+            case SHADOW_TOGGLE_FIT_LIGHT_TO_TEXELS:
+                state.fitLightToTexels = checked;
+            break;
+        }
+    }
+
+    void SyncShadowToggleToRuntime( ShadowToggleKind kind, Gui_ShadowPanelState& state, GuiRuntimeContext& runtime )
+    {
+        switch( kind )
+        {
+            case SHADOW_TOGGLE_VISUALIZE_CASCADES:
+                if( runtime.pVisualizeCascades )
+                {
+                    *runtime.pVisualizeCascades = state.visualizeCascades;
+                }
+            break;
+
+            case SHADOW_TOGGLE_BLEND_ENABLED:
+                if( runtime.pCascadedShadow )
+                {
+                    runtime.pCascadedShadow->m_iBlurBetweenCascades = state.blendBetweenMaps ? 1 : 0;
+                }
+            break;
+
+            case SHADOW_TOGGLE_DERIVATIVE_OFFSET:
+                if( runtime.pCascadedShadow )
+                {
+                    runtime.pCascadedShadow->m_iDerivativeBasedOffset = state.derivativeOffset ? 1 : 0;
+                }
+            break;
+
+            case SHADOW_TOGGLE_FIT_LIGHT_TO_TEXELS:
+                if( runtime.pMoveLightTexelSize )
+                {
+                    *runtime.pMoveLightTexelSize = state.fitLightToTexels;
+                }
+                if( runtime.pCascadedShadow )
+                {
+                    runtime.pCascadedShadow->m_bMoveLightTexelSize = state.fitLightToTexels;
+                }
+            break;
+        }
+    }
+
+    void SyncShadowToggleFromRuntime( ShadowToggleKind kind, Gui_ShadowPanelState& state, const GuiRuntimeContext& runtime )
+    {
+        switch( kind )
+        {
+            case SHADOW_TOGGLE_VISUALIZE_CASCADES:
+                if( runtime.pVisualizeCascades )
+                {
+                    state.visualizeCascades = *runtime.pVisualizeCascades;
+                }
+            break;
+
+            case SHADOW_TOGGLE_BLEND_ENABLED:
+                if( runtime.pCascadedShadow )
+                {
+                    state.blendBetweenMaps = runtime.pCascadedShadow->m_iBlurBetweenCascades != 0;
+                }
+            break;
+
+            case SHADOW_TOGGLE_DERIVATIVE_OFFSET:
+                if( runtime.pCascadedShadow )
+                {
+                    state.derivativeOffset = runtime.pCascadedShadow->m_iDerivativeBasedOffset != 0;
+                }
+            break;
+
+            case SHADOW_TOGGLE_FIT_LIGHT_TO_TEXELS:
+                if( runtime.pMoveLightTexelSize )
+                {
+                    state.fitLightToTexels = *runtime.pMoveLightTexelSize;
+                }
+                else if( runtime.pCascadedShadow )
+                {
+                    state.fitLightToTexels = runtime.pCascadedShadow->m_bMoveLightTexelSize ? true : false;
+                }
+            break;
+        }
+    }
+
+    const WCHAR* GetShadowComboLabel( ShadowComboKind kind )
+    {
+        switch( kind )
+        {
+            case SHADOW_COMBO_DEPTH_FORMAT:
+                return L"Depth Buffer";
+            case SHADOW_COMBO_SELECTED_CAMERA:
+                return L"Camera";
+            case SHADOW_COMBO_CASCADE_LEVELS:
+                return L"Cascade Levels";
+            case SHADOW_COMBO_FIT_TO_CASCADE:
+                return L"Projection Fit";
+            case SHADOW_COMBO_FIT_TO_NEARFAR:
+                return L"Near/Far Fit";
+            case SHADOW_COMBO_CASCADE_SELECTION:
+                return L"Cascade Selection";
+        }
+
+        return L"Shadow Setting";
+    }
+
+    void PopulateShadowCombo( ShadowComboKind kind, const Gui_ShadowPanelState& state, CDXUTComboBox& comboBox )
+    {
+        comboBox.RemoveAllItems();
+
+        switch( kind )
+        {
+            case SHADOW_COMBO_DEPTH_FORMAT:
+                comboBox.AddItem( L"32 bit Buffer", ULongToPtr( CASCADE_DXGI_FORMAT_R32_TYPELESS ) );
+                comboBox.AddItem( L"16 bit Buffer", ULongToPtr( CASCADE_DXGI_FORMAT_R16_TYPELESS ) );
+                comboBox.AddItem( L"24 bit Buffer", ULongToPtr( CASCADE_DXGI_FORMAT_R24G8_TYPELESS ) );
+            break;
+
+            case SHADOW_COMBO_SELECTED_CAMERA:
+                comboBox.AddItem( L"Eye Camera", ULongToPtr( EYE_CAMERA ) );
+                comboBox.AddItem( L"Light Camera", ULongToPtr( LIGHT_CAMERA ) );
+                for( INT index = 0; index < state.cascadeLevels; ++index )
+                {
+                    WCHAR text[64];
+                    swprintf_s( text, L"Cascade Cam %d", index + 1 );
+                    comboBox.AddItem( text, ULongToPtr( ORTHO_CAMERA1 + index ) );
+                }
+            break;
+
+            case SHADOW_COMBO_CASCADE_LEVELS:
+                for( INT index = 1; index <= MAX_CASCADES; ++index )
+                {
+                    WCHAR text[32];
+                    swprintf_s( text, L"%d Level", index );
+                    comboBox.AddItem( text, ULongToPtr( index ) );
+                }
+            break;
+
+            case SHADOW_COMBO_FIT_TO_CASCADE:
+                comboBox.AddItem( L"Fit Scene", ULongToPtr( FIT_TO_SCENE ) );
+                comboBox.AddItem( L"Fit Cascades", ULongToPtr( FIT_TO_CASCADES ) );
+            break;
+
+            case SHADOW_COMBO_FIT_TO_NEARFAR:
+                comboBox.AddItem( L"AABB/Scene NearFar", ULongToPtr( FIT_NEARFAR_SCENE_AABB ) );
+                comboBox.AddItem( L"Pancaking", ULongToPtr( FIT_NEARFAR_PANCAKING ) );
+                comboBox.AddItem( L"0:1 NearFar", ULongToPtr( FIT_NEARFAR_ZERO_ONE ) );
+                comboBox.AddItem( L"AABB NearFar", ULongToPtr( FIT_NEARFAR_AABB ) );
+            break;
+
+            case SHADOW_COMBO_CASCADE_SELECTION:
+                comboBox.AddItem( L"Map Selection", ULongToPtr( CASCADE_SELECTION_MAP ) );
+                comboBox.AddItem( L"Interval Selection", ULongToPtr( CASCADE_SELECTION_INTERVAL ) );
+            break;
+        }
+    }
+
+    void RefreshShadowComboSelection( ShadowComboKind kind, const Gui_ShadowPanelState& state, CDXUTComboBox& comboBox )
+    {
+        switch( kind )
+        {
+            case SHADOW_COMBO_DEPTH_FORMAT:
+                comboBox.SetSelectedByData( ULongToPtr( state.depthBufferFormat ) );
+            break;
+
+            case SHADOW_COMBO_SELECTED_CAMERA:
+                comboBox.SetSelectedByData( ULongToPtr( state.selectedCamera ) );
+            break;
+
+            case SHADOW_COMBO_CASCADE_LEVELS:
+                comboBox.SetSelectedByData( ULongToPtr( state.cascadeLevels ) );
+            break;
+
+            case SHADOW_COMBO_FIT_TO_CASCADE:
+                comboBox.SetSelectedByData( ULongToPtr( state.fitToCascades ) );
+            break;
+
+            case SHADOW_COMBO_FIT_TO_NEARFAR:
+                comboBox.SetSelectedByData( ULongToPtr( state.fitToNearFar ) );
+            break;
+
+            case SHADOW_COMBO_CASCADE_SELECTION:
+                comboBox.SetSelectedByData( ULongToPtr( state.cascadeSelection ) );
+            break;
+        }
+    }
+
+    void WriteShadowComboSelection( ShadowComboKind kind, Gui_ShadowPanelState& state, CDXUTComboBox& comboBox )
+    {
+        switch( kind )
+        {
+            case SHADOW_COMBO_DEPTH_FORMAT:
+                state.depthBufferFormat = (SHADOW_TEXTURE_FORMAT)PtrToUlong( comboBox.GetSelectedData() );
+            break;
+
+            case SHADOW_COMBO_SELECTED_CAMERA:
+                state.selectedCamera = (INT)PtrToUlong( comboBox.GetSelectedData() );
+                ClampSelectedCamera( state );
+            break;
+
+            case SHADOW_COMBO_CASCADE_LEVELS:
+                state.cascadeLevels = (INT)PtrToUlong( comboBox.GetSelectedData() );
+                NormalizeShadowState( state );
+            break;
+
+            case SHADOW_COMBO_FIT_TO_CASCADE:
+                state.fitToCascades = (FIT_PROJECTION_TO_CASCADES)PtrToUlong( comboBox.GetSelectedData() );
+            break;
+
+            case SHADOW_COMBO_FIT_TO_NEARFAR:
+                state.fitToNearFar = (FIT_TO_NEAR_FAR)PtrToUlong( comboBox.GetSelectedData() );
+                NormalizeCascadeSelections( state );
+            break;
+
+            case SHADOW_COMBO_CASCADE_SELECTION:
+                state.cascadeSelection = (CASCADE_SELECTION)PtrToUlong( comboBox.GetSelectedData() );
+                if( state.cascadeSelection == CASCADE_SELECTION_MAP &&
+                    state.fitToNearFar == FIT_NEARFAR_PANCAKING )
+                {
+                    state.fitToNearFar = FIT_NEARFAR_SCENE_AABB;
+                }
+                NormalizeCascadeSelections( state );
+            break;
+        }
+    }
+
+    void SyncShadowComboToRuntime( ShadowComboKind kind, Gui_ShadowPanelState& state, GuiRuntimeContext& runtime )
+    {
+        switch( kind )
+        {
+            case SHADOW_COMBO_DEPTH_FORMAT:
+                if( runtime.pCascadeConfig )
+                {
+                    runtime.pCascadeConfig->m_ShadowBufferFormat = state.depthBufferFormat;
+                }
+            break;
+
+            case SHADOW_COMBO_SELECTED_CAMERA:
+                if( runtime.ppActiveCamera )
+                {
+                    *runtime.ppActiveCamera = ( state.selectedCamera < LIGHT_CAMERA ) ? runtime.pViewerCamera : runtime.pLightCamera;
+                }
+                if( runtime.pCascadedShadow )
+                {
+                    runtime.pCascadedShadow->m_eSelectedCamera = (CAMERA_SELECTION)state.selectedCamera;
+                }
+            break;
+
+            case SHADOW_COMBO_CASCADE_LEVELS:
+                if( runtime.pCascadeConfig )
+                {
+                    runtime.pCascadeConfig->m_nCascadeLevels = state.cascadeLevels;
+                }
+            break;
+
+            case SHADOW_COMBO_FIT_TO_CASCADE:
+                if( runtime.pCascadedShadow )
+                {
+                    runtime.pCascadedShadow->m_eSelectedCascadesFit = state.fitToCascades;
+                }
+            break;
+
+            case SHADOW_COMBO_FIT_TO_NEARFAR:
+                if( runtime.pCascadedShadow )
+                {
+                    runtime.pCascadedShadow->m_eSelectedNearFarFit = state.fitToNearFar;
+                }
+            break;
+
+            case SHADOW_COMBO_CASCADE_SELECTION:
+                if( runtime.pCascadedShadow )
+                {
+                    runtime.pCascadedShadow->m_eSelectedCascadeSelection = state.cascadeSelection;
+                }
+            break;
+        }
+    }
+
+    void SyncShadowComboFromRuntime( ShadowComboKind kind, Gui_ShadowPanelState& state, const GuiRuntimeContext& runtime )
+    {
+        switch( kind )
+        {
+            case SHADOW_COMBO_DEPTH_FORMAT:
+                if( runtime.pCascadeConfig )
+                {
+                    state.depthBufferFormat = runtime.pCascadeConfig->m_ShadowBufferFormat;
+                }
+            break;
+
+            case SHADOW_COMBO_SELECTED_CAMERA:
+                if( runtime.pCascadedShadow )
+                {
+                    state.selectedCamera = runtime.pCascadedShadow->m_eSelectedCamera;
+                }
+            break;
+
+            case SHADOW_COMBO_CASCADE_LEVELS:
+                if( runtime.pCascadeConfig )
+                {
+                    state.cascadeLevels = runtime.pCascadeConfig->m_nCascadeLevels;
+                }
+            break;
+
+            case SHADOW_COMBO_FIT_TO_CASCADE:
+                if( runtime.pCascadedShadow )
+                {
+                    state.fitToCascades = runtime.pCascadedShadow->m_eSelectedCascadesFit;
+                }
+            break;
+
+            case SHADOW_COMBO_FIT_TO_NEARFAR:
+                if( runtime.pCascadedShadow )
+                {
+                    state.fitToNearFar = runtime.pCascadedShadow->m_eSelectedNearFarFit;
+                }
+            break;
+
+            case SHADOW_COMBO_CASCADE_SELECTION:
+                if( runtime.pCascadedShadow )
+                {
+                    state.cascadeSelection = runtime.pCascadedShadow->m_eSelectedCascadeSelection;
+                }
+            break;
+        }
+
+        NormalizeShadowState( state );
+    }
+
+    INT ReadCascadePartitionValue( INT cascadeIndex, const Gui_ShadowPanelState& state )
+    {
+        return state.cascadePartitions[cascadeIndex];
+    }
+
+    void WriteCascadePartitionValue( INT cascadeIndex, Gui_ShadowPanelState& state, INT rawValue )
+    {
+        state.cascadePartitions[cascadeIndex] = rawValue;
+        NormalizeCascadePartitions( state, cascadeIndex );
+    }
+
+    std::wstring FormatCascadePartitionCaption( INT cascadeIndex, INT rawValue )
+    {
+        WCHAR text[64] = {};
+        swprintf_s( text, L"L%d: %d", cascadeIndex + 1, rawValue );
+        return text;
+    }
+
+    void SyncCascadePartitionToRuntime( INT cascadeIndex, Gui_ShadowPanelState& state, GuiRuntimeContext& runtime )
+    {
+        if( runtime.pCascadedShadow )
+        {
+            runtime.pCascadedShadow->m_iCascadePartitionsZeroToOne[cascadeIndex] = state.cascadePartitions[cascadeIndex];
+        }
+    }
+
+    void SyncCascadePartitionFromRuntime( INT cascadeIndex, Gui_ShadowPanelState& state, const GuiRuntimeContext& runtime )
+    {
+        if( runtime.pCascadedShadow )
+        {
+            state.cascadePartitions[cascadeIndex] = runtime.pCascadedShadow->m_iCascadePartitionsZeroToOne[cascadeIndex];
+        }
     }
 }
 
 Gui_ShadowPanel::Gui_ShadowPanel( const Gui_ShadowPanelIds& ids, Gui_ShadowPanelState& state )
     : m_ids( ids ),
       m_state( state ),
-      m_depthFormatStrategy( GUI_SHADOW_COMBO_DEPTH_FORMAT, state ),
-      m_selectedCameraStrategy( GUI_SHADOW_COMBO_SELECTED_CAMERA, state ),
-      m_cascadeLevelsStrategy( GUI_SHADOW_COMBO_CASCADE_LEVELS, state ),
-      m_fitToCascadesStrategy( GUI_SHADOW_COMBO_FIT_TO_CASCADE, state ),
-      m_fitToNearFarStrategy( GUI_SHADOW_COMBO_FIT_TO_NEARFAR, state ),
-      m_cascadeSelectionStrategy( GUI_SHADOW_COMBO_CASCADE_SELECTION, state ),
-      m_bufferSizeStrategy( GUI_SHADOW_SLIDER_BUFFER_SIZE, state ),
-      m_pcfSizeStrategy( GUI_SHADOW_SLIDER_PCF_SIZE, state ),
-      m_pcfOffsetStrategy( GUI_SHADOW_SLIDER_PCF_OFFSET, state ),
-      m_blendAmountStrategy( GUI_SHADOW_SLIDER_BLEND_AMOUNT, state ),
-      m_visualizeCascadesStrategy( GUI_SHADOW_TOGGLE_VISUALIZE_CASCADES, state ),
-      m_blendEnabledStrategy( GUI_SHADOW_TOGGLE_BLEND_ENABLED, state ),
-      m_derivativeOffsetStrategy( GUI_SHADOW_TOGGLE_DERIVATIVE_OFFSET, state ),
-      m_fitLightToTexelsStrategy( GUI_SHADOW_TOGGLE_FIT_LIGHT_TO_TEXELS, state ),
-      m_depthFormatControl( ids.depthFormatLabelId, ids.depthFormatComboId, m_depthFormatStrategy ),
-      m_selectedCameraControl( ids.selectedCameraLabelId, ids.selectedCameraComboId, m_selectedCameraStrategy ),
-      m_cascadeLevelsControl( ids.cascadeLevelsLabelId, ids.cascadeLevelsComboId, m_cascadeLevelsStrategy ),
-      m_fitToCascadesControl( ids.fitToCascadeLabelId, ids.fitToCascadeComboId, m_fitToCascadesStrategy ),
-      m_fitToNearFarControl( ids.fitToNearFarLabelId, ids.fitToNearFarComboId, m_fitToNearFarStrategy ),
-      m_cascadeSelectionControl( ids.cascadeSelectionLabelId, ids.cascadeSelectionComboId, m_cascadeSelectionStrategy ),
-      m_visualizeCascadesControl( ids.visualizeCascadesCheckId, m_visualizeCascadesStrategy ),
-      m_bufferSizeControl( ids.bufferSizeTextId, ids.bufferSizeSliderId, m_bufferSizeStrategy ),
-      m_pcfSizeControl( ids.pcfSizeTextId, ids.pcfSizeSliderId, m_pcfSizeStrategy ),
-      m_pcfOffsetControl( ids.pcfOffsetTextId, ids.pcfOffsetSliderId, m_pcfOffsetStrategy ),
-      m_blendEnabledControl( ids.blendEnabledCheckId, m_blendEnabledStrategy ),
-      m_blendAmountControl( ids.blendAmountTextId, ids.blendAmountSliderId, m_blendAmountStrategy ),
-      m_derivativeOffsetControl( ids.derivativeOffsetCheckId, m_derivativeOffsetStrategy ),
-      m_fitLightToTexelsControl( ids.fitLightToTexelsCheckId, m_fitLightToTexelsStrategy )
+      m_pBlendAmountControl( NULL )
 {
-    for( INT index = 0; index < MAX_CASCADES; ++index )
-    {
-        m_cascadeStrategies.push_back(
-            std::unique_ptr<Gui_ShadowCascadeSliderStrategy>(
-                new Gui_ShadowCascadeSliderStrategy( index, state ) ) );
-        m_cascadeControls.push_back(
-            std::unique_ptr<Gui_SliderControl>(
-                new Gui_SliderControl( ids.cascadePartitionTextIds[index],
-                                       ids.cascadePartitionSliderIds[index],
-                                       *m_cascadeStrategies.back() ) ) );
-    }
 }
 
 void Gui_ShadowPanel::BuildControls( GuiControlFactory& factory )
 {
-    RegisterControl( m_visualizeCascadesControl );
-    RegisterControl( m_depthFormatControl );
-    RegisterControl( m_selectedCameraControl );
-    RegisterControl( m_cascadeLevelsControl );
-    RegisterControl( m_fitToCascadesControl );
-    RegisterControl( m_fitToNearFarControl );
-    RegisterControl( m_cascadeSelectionControl );
-    RegisterControl( m_fitLightToTexelsControl );
-    RegisterControl( m_bufferSizeControl );
-    RegisterControl( m_pcfSizeControl );
-    RegisterControl( m_pcfOffsetControl );
-    RegisterControl( m_blendEnabledControl );
-    RegisterControl( m_blendAmountControl );
-    RegisterControl( m_derivativeOffsetControl );
+    m_cascadeControls.clear();
 
-    factory.Add( m_visualizeCascadesControl );
-    factory.Add( m_depthFormatControl );
-    factory.Add( m_selectedCameraControl );
-    factory.Add( m_cascadeLevelsControl );
-    factory.Add( m_fitToCascadesControl );
-    factory.Add( m_fitToNearFarControl );
-    factory.Add( m_cascadeSelectionControl );
-    factory.Add( m_fitLightToTexelsControl );
-    factory.Add( m_bufferSizeControl );
-    factory.Add( m_pcfSizeControl );
-    factory.Add( m_pcfOffsetControl );
-    factory.Add( m_blendEnabledControl );
-    factory.Add( m_blendAmountControl );
-    factory.Add( m_derivativeOffsetControl );
+    AddCheckBox(
+        factory,
+        m_ids.visualizeCascadesCheckId,
+        GetShadowToggleLabel( SHADOW_TOGGLE_VISUALIZE_CASCADES ),
+        [this]() { return ReadShadowToggleValue( SHADOW_TOGGLE_VISUALIZE_CASCADES, m_state ); },
+        [this]( bool checked ) { WriteShadowToggleValue( SHADOW_TOGGLE_VISUALIZE_CASCADES, m_state, checked ); },
+        [this]( GuiRuntimeContext& runtime ) { SyncShadowToggleToRuntime( SHADOW_TOGGLE_VISUALIZE_CASCADES, m_state, runtime ); },
+        [this]( const GuiRuntimeContext& runtime ) { SyncShadowToggleFromRuntime( SHADOW_TOGGLE_VISUALIZE_CASCADES, m_state, runtime ); } );
+
+    const auto addShadowCombo =
+        [this, &factory]( INT labelId, INT comboId, ShadowComboKind kind )
+    {
+        AddComboBox(
+            factory,
+            labelId,
+            comboId,
+            GetShadowComboLabel( kind ),
+            [this, kind]( CDXUTComboBox& comboBox ) { PopulateShadowCombo( kind, m_state, comboBox ); },
+            [this, kind]( CDXUTComboBox& comboBox ) { RefreshShadowComboSelection( kind, m_state, comboBox ); },
+            [this, kind]( CDXUTComboBox& comboBox ) { WriteShadowComboSelection( kind, m_state, comboBox ); },
+            [this, kind]( GuiRuntimeContext& runtime ) { SyncShadowComboToRuntime( kind, m_state, runtime ); },
+            [this, kind]( const GuiRuntimeContext& runtime ) { SyncShadowComboFromRuntime( kind, m_state, runtime ); } );
+    };
+
+    addShadowCombo( m_ids.depthFormatLabelId, m_ids.depthFormatComboId, SHADOW_COMBO_DEPTH_FORMAT );
+    addShadowCombo( m_ids.selectedCameraLabelId, m_ids.selectedCameraComboId, SHADOW_COMBO_SELECTED_CAMERA );
+    addShadowCombo( m_ids.cascadeLevelsLabelId, m_ids.cascadeLevelsComboId, SHADOW_COMBO_CASCADE_LEVELS );
+    addShadowCombo( m_ids.fitToCascadeLabelId, m_ids.fitToCascadeComboId, SHADOW_COMBO_FIT_TO_CASCADE );
+    addShadowCombo( m_ids.fitToNearFarLabelId, m_ids.fitToNearFarComboId, SHADOW_COMBO_FIT_TO_NEARFAR );
+    addShadowCombo( m_ids.cascadeSelectionLabelId, m_ids.cascadeSelectionComboId, SHADOW_COMBO_CASCADE_SELECTION );
+
+    AddCheckBox(
+        factory,
+        m_ids.fitLightToTexelsCheckId,
+        GetShadowToggleLabel( SHADOW_TOGGLE_FIT_LIGHT_TO_TEXELS ),
+        [this]() { return ReadShadowToggleValue( SHADOW_TOGGLE_FIT_LIGHT_TO_TEXELS, m_state ); },
+        [this]( bool checked ) { WriteShadowToggleValue( SHADOW_TOGGLE_FIT_LIGHT_TO_TEXELS, m_state, checked ); },
+        [this]( GuiRuntimeContext& runtime ) { SyncShadowToggleToRuntime( SHADOW_TOGGLE_FIT_LIGHT_TO_TEXELS, m_state, runtime ); },
+        [this]( const GuiRuntimeContext& runtime ) { SyncShadowToggleFromRuntime( SHADOW_TOGGLE_FIT_LIGHT_TO_TEXELS, m_state, runtime ); } );
+
+    const auto addShadowSlider =
+        [this, &factory]( INT textId, INT sliderId, ShadowSliderKind kind ) -> Gui_SliderControl&
+    {
+        return AddSlider(
+            factory,
+            textId,
+            sliderId,
+            GetShadowSliderMinValue( kind ),
+            GetShadowSliderMaxValue( kind ),
+            [this, kind]() { return ReadShadowSliderValue( kind, m_state ); },
+            [this, kind]( INT rawValue, UINT ) { WriteShadowSliderValue( kind, m_state, rawValue ); },
+            [kind]( INT rawValue ) { return FormatShadowSliderCaption( kind, rawValue ); },
+            [this, kind]( GuiRuntimeContext& runtime ) { SyncShadowSliderToRuntime( kind, m_state, runtime ); },
+            [this, kind]( const GuiRuntimeContext& runtime ) { SyncShadowSliderFromRuntime( kind, m_state, runtime ); } );
+    };
+
+    addShadowSlider( m_ids.bufferSizeTextId, m_ids.bufferSizeSliderId, SHADOW_SLIDER_BUFFER_SIZE );
+    addShadowSlider( m_ids.pcfSizeTextId, m_ids.pcfSizeSliderId, SHADOW_SLIDER_PCF_SIZE );
+    addShadowSlider( m_ids.pcfOffsetTextId, m_ids.pcfOffsetSliderId, SHADOW_SLIDER_PCF_OFFSET );
+
+    AddCheckBox(
+        factory,
+        m_ids.blendEnabledCheckId,
+        GetShadowToggleLabel( SHADOW_TOGGLE_BLEND_ENABLED ),
+        [this]() { return ReadShadowToggleValue( SHADOW_TOGGLE_BLEND_ENABLED, m_state ); },
+        [this]( bool checked ) { WriteShadowToggleValue( SHADOW_TOGGLE_BLEND_ENABLED, m_state, checked ); },
+        [this]( GuiRuntimeContext& runtime ) { SyncShadowToggleToRuntime( SHADOW_TOGGLE_BLEND_ENABLED, m_state, runtime ); },
+        [this]( const GuiRuntimeContext& runtime ) { SyncShadowToggleFromRuntime( SHADOW_TOGGLE_BLEND_ENABLED, m_state, runtime ); } );
+
+    m_pBlendAmountControl = &addShadowSlider( m_ids.blendAmountTextId, m_ids.blendAmountSliderId, SHADOW_SLIDER_BLEND_AMOUNT );
+
+    AddCheckBox(
+        factory,
+        m_ids.derivativeOffsetCheckId,
+        GetShadowToggleLabel( SHADOW_TOGGLE_DERIVATIVE_OFFSET ),
+        [this]() { return ReadShadowToggleValue( SHADOW_TOGGLE_DERIVATIVE_OFFSET, m_state ); },
+        [this]( bool checked ) { WriteShadowToggleValue( SHADOW_TOGGLE_DERIVATIVE_OFFSET, m_state, checked ); },
+        [this]( GuiRuntimeContext& runtime ) { SyncShadowToggleToRuntime( SHADOW_TOGGLE_DERIVATIVE_OFFSET, m_state, runtime ); },
+        [this]( const GuiRuntimeContext& runtime ) { SyncShadowToggleFromRuntime( SHADOW_TOGGLE_DERIVATIVE_OFFSET, m_state, runtime ); } );
 
     for( INT index = 0; index < MAX_CASCADES; ++index )
     {
-        RegisterControl( *m_cascadeControls[index] );
-        factory.Add( *m_cascadeControls[index] );
+        Gui_SliderControl& control = AddSlider(
+            factory,
+            m_ids.cascadePartitionTextIds[index],
+            m_ids.cascadePartitionSliderIds[index],
+            0,
+            100,
+            [this, index]() { return ReadCascadePartitionValue( index, m_state ); },
+            [this, index]( INT rawValue, UINT ) { WriteCascadePartitionValue( index, m_state, rawValue ); },
+            [index]( INT rawValue ) { return FormatCascadePartitionCaption( index, rawValue ); },
+            [this, index]( GuiRuntimeContext& runtime ) { SyncCascadePartitionToRuntime( index, m_state, runtime ); },
+            [this, index]( const GuiRuntimeContext& runtime ) { SyncCascadePartitionFromRuntime( index, m_state, runtime ); } );
+        m_cascadeControls.push_back( &control );
     }
 }
 
 void Gui_ShadowPanel::OnUpdate()
 {
     NormalizeShadowState( m_state );
-    m_blendAmountControl.SetEnabled( m_state.blendBetweenMaps );
 
-    for( INT index = 0; index < MAX_CASCADES; ++index )
+    if( m_pBlendAmountControl )
+    {
+        m_pBlendAmountControl->SetEnabled( m_state.blendBetweenMaps );
+    }
+
+    for( INT index = 0; index < MAX_CASCADES && index < (INT)m_cascadeControls.size(); ++index )
     {
         const bool isVisible = index < m_state.cascadeLevels;
         const bool isEnabled = isVisible &&

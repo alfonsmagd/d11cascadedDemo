@@ -410,6 +410,7 @@
     <ClCompile Include="DXUT\Optional\DXUTsettingsdlg.cpp" />
     <ClCompile Include="DXUT\Optional\SDKmesh.cpp" />
     <ClCompile Include="DXUT\Optional\SDKmisc.cpp" />
+    <None Include="umlGUI.mermaid" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="CascadedShadowMaps11.cpp" />

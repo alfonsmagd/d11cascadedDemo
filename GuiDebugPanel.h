@@ -16,53 +16,6 @@ struct Gui_DebugPanelState
     bool renderAllBoundingBoxes;
 };
 
-class Gui_RenderDebugStrategy : public Gui_CheckBoxStrategy
-{
-public:
-    Gui_RenderDebugStrategy( Gui_DebugPanelState& state );
-
-    virtual const WCHAR* GetLabelText() const;
-    virtual UINT GetHotkey() const;
-    virtual bool ReadValue() const;
-    virtual void WriteValue( bool checked );
-    virtual void SyncToRuntime( GuiRuntimeContext& runtime );
-    virtual void SyncFromRuntime( const GuiRuntimeContext& runtime );
-
-private:
-    Gui_DebugPanelState& m_state;
-};
-
-class Gui_RenderDebugBoundingBoxStrategy : public Gui_CheckBoxStrategy
-{
-public:
-    Gui_RenderDebugBoundingBoxStrategy( Gui_DebugPanelState& state );
-
-    virtual const WCHAR* GetLabelText() const;
-    virtual bool ReadValue() const;
-    virtual void WriteValue( bool checked );
-    virtual void SyncToRuntime( GuiRuntimeContext& runtime );
-    virtual void SyncFromRuntime( const GuiRuntimeContext& runtime );
-
-private:
-    Gui_DebugPanelState& m_state;
-};
-
-class Gui_RenderAllBoundingBoxesStrategy : public Gui_CheckBoxStrategy
-{
-public:
-    Gui_RenderAllBoundingBoxesStrategy(Gui_DebugPanelState& state);
-
-    virtual const WCHAR* GetLabelText() const;
-    virtual bool ReadValue() const;
-    virtual void WriteValue(bool checked);
-    virtual void SyncToRuntime(GuiRuntimeContext& runtime);
-    virtual void SyncFromRuntime(const GuiRuntimeContext& runtime);
-
-private:
-    Gui_DebugPanelState& m_state;
-};
-
-
 class Gui_DebugPanel : public GuiPanelBase
 {
 public:
@@ -74,10 +27,4 @@ protected:
 private:
     Gui_DebugPanelIds m_ids;
     Gui_DebugPanelState& m_state;
-    Gui_RenderDebugStrategy m_renderDebugStrategy;
-    Gui_RenderDebugBoundingBoxStrategy m_renderDebugBoundingBoxStrategy;
-    Gui_RenderAllBoundingBoxesStrategy m_renderDebugAllBoundingBoxesStrategy;
-    Gui_CheckBoxControl m_renderDebugControl;
-    Gui_CheckBoxControl m_renderDebugBoundingBoxControl;
-    Gui_CheckBoxControl m_renderDebugAllBoundingBoxesControl;
 };

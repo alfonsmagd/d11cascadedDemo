@@ -83,6 +83,7 @@
     <None Include="Debug.hlsl">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="umlGUI.mermaid" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="CascadedShadowMaps11.cpp" />

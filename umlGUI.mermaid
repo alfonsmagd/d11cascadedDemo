@@ -1,0 +1,26 @@
+
+classDiagram
+    class GuiPanelBase {
+        -m_ownedControls
+        +Update()
+        +ApplyPendingChanges(...)
+        +UpdateFromRuntime(...)
+    }
+
+    class Gui_ControlBase {
+        +Create(...)
+        +HandleEvent(...)
+        +Refresh()
+        +ApplyPendingChanges(...)
+        +UpdateFromRuntime(...)
+    }
+
+    class Gui_CheckBoxControl
+    class Gui_SliderControl
+    class Gui_ComboBoxControl
+
+    Gui_ControlBase <|-- Gui_CheckBoxControl
+    Gui_ControlBase <|-- Gui_SliderControl
+    Gui_ControlBase <|-- Gui_ComboBoxControl
+
+    GuiPanelBase --> Gui_ControlBase

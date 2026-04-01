@@ -4,7 +4,11 @@
 #include "DXUT.h"
 #include "DXUTgui.h"
 #include "GuiRuntimeContext.h"
+#include <functional>
+#include <memory>
+#include <string>
 #include <vector>
+#include <utility>
 #include <stddef.h>
 
 struct GuiPanelLayout
@@ -176,6 +180,10 @@ private:
 
 class GuiPanelBase
 {
+    using ptr_VectorSliderStrategies = std::vector<std::unique_ptr<Gui_SliderStrategy>>;
+    using ptr_VectorCheckBoxStrategies = std::vector<std::unique_ptr<Gui_CheckBoxStrategy>>;
+    using ptr_VectorComboBoxStrategies = std::vector<std::unique_ptr<Gui_ComboBoxStrategy>>;
+    using ptr_VectorControls = std::vector<std::unique_ptr<Gui_ControlBase>>;
 public:
     GuiPanelBase();
     virtual ~GuiPanelBase();
@@ -205,7 +213,37 @@ public:
     const CDXUTDialog& Dialog() const;
 
 protected:
-    void RegisterControl( Gui_ControlBase& control );
+    Gui_CheckBoxControl& AddCheckBox(
+        GuiControlFactory& factory,
+        INT checkBoxId,
+        const WCHAR* labelText,
+        const std::function<bool()>& readValue,
+        const std::function<void( bool )>& writeValue,
+        const std::function<void( GuiRuntimeContext& )>& syncToRuntime,
+        const std::function<void( const GuiRuntimeContext& )>& syncFromRuntime,
+        UINT hotkey = 0 );
+    Gui_SliderControl& AddSlider(
+        GuiControlFactory& factory,
+        INT textId,
+        INT sliderId,
+        INT minValue,
+        INT maxValue,
+        const std::function<INT()>& readValue,
+        const std::function<void( INT, UINT )>& writeValue,
+        const std::function<std::wstring( INT )>& formatCaption,
+        const std::function<void( GuiRuntimeContext& )>& syncToRuntime,
+        const std::function<void( const GuiRuntimeContext& )>& syncFromRuntime );
+    Gui_ComboBoxControl& AddComboBox(
+        GuiControlFactory& factory,
+        INT labelId,
+        INT comboId,
+        const WCHAR* labelText,
+        const std::function<void( CDXUTComboBox& )>& populate,
+        const std::function<void( CDXUTComboBox& )>& refreshSelection,
+        const std::function<void( CDXUTComboBox& )>& writeSelection,
+        const std::function<void( GuiRuntimeContext& )>& syncToRuntime,
+        const std::function<void( const GuiRuntimeContext& )>& syncFromRuntime,
+        UINT hotkey = 0 );
 
     virtual void BuildControls( GuiControlFactory& factory ) = 0;
     virtual void OnUpdate();
@@ -213,10 +251,31 @@ protected:
     virtual bool OnUnhandledEvent( UINT nEvent, INT controlId );
 
 private:
+    template<typename TStrategyBase>
+    TStrategyBase& OwnStrategy( std::vector<std::unique_ptr<TStrategyBase>>& storage,
+                                std::unique_ptr<TStrategyBase> strategy )
+    {
+        TStrategyBase* pStrategy = strategy.get();
+        storage.push_back( std::move( strategy ) );
+        return *pStrategy;
+    }
+
+    template<typename TControl>
+    TControl& OwnControl( GuiControlFactory& factory, std::unique_ptr<TControl> control )
+    {
+        TControl* pControl = control.get();
+        factory.Add( *pControl );
+        m_ownedControls.push_back( std::move( control ) );
+        return *pControl;
+    }
+
     void RefreshControls();
 
     CDXUTDialog m_dialog;
-    std::vector<Gui_ControlBase*> m_controls;
+    ptr_VectorSliderStrategies   m_ownedSliderStrategies;
+    ptr_VectorCheckBoxStrategies m_ownedCheckBoxStrategies;
+    ptr_VectorComboBoxStrategies m_ownedComboBoxStrategies;
+    ptr_VectorControls           m_ownedControls;
     bool m_isInitialized;
     bool m_isOpen;
 };

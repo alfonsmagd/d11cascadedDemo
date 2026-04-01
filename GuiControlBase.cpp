@@ -2,6 +2,200 @@
 #include "GuiControlBase.h"
 #include <wchar.h>
 
+namespace
+{
+    class Gui_LambdaSliderStrategy : public Gui_SliderStrategy
+    {
+    public:
+        Gui_LambdaSliderStrategy(
+            INT minValue,
+            INT maxValue,
+            const std::function<INT()>& readValue,
+            const std::function<void( INT, UINT )>& writeValue,
+            const std::function<std::wstring( INT )>& formatCaption,
+            const std::function<void( GuiRuntimeContext& )>& syncToRuntime,
+            const std::function<void( const GuiRuntimeContext& )>& syncFromRuntime )
+            : m_minValue( minValue ),
+              m_maxValue( maxValue ),
+              m_readValue( readValue ),
+              m_writeValue( writeValue ),
+              m_formatCaption( formatCaption ),
+              m_syncToRuntime( syncToRuntime ),
+              m_syncFromRuntime( syncFromRuntime )
+        {
+        }
+
+        virtual INT GetMinValue() const
+        {
+            return m_minValue;
+        }
+
+        virtual INT GetMaxValue() const
+        {
+            return m_maxValue;
+        }
+
+        virtual INT ReadValue() const
+        {
+            return m_readValue();
+        }
+
+        virtual void WriteValue( INT rawValue, UINT nEvent )
+        {
+            m_writeValue( rawValue, nEvent );
+        }
+
+        virtual void FormatCaption( INT rawValue, WCHAR* text, size_t textCount ) const
+        {
+            const std::wstring caption = m_formatCaption( rawValue );
+            wcsncpy_s( text, textCount, caption.c_str(), _TRUNCATE );
+        }
+
+        virtual void SyncToRuntime( GuiRuntimeContext& runtime )
+        {
+            m_syncToRuntime( runtime );
+        }
+
+        virtual void SyncFromRuntime( const GuiRuntimeContext& runtime )
+        {
+            m_syncFromRuntime( runtime );
+        }
+
+    private:
+        INT m_minValue;
+        INT m_maxValue;
+        std::function<INT()> m_readValue;
+        std::function<void( INT, UINT )> m_writeValue;
+        std::function<std::wstring( INT )> m_formatCaption;
+        std::function<void( GuiRuntimeContext& )> m_syncToRuntime;
+        std::function<void( const GuiRuntimeContext& )> m_syncFromRuntime;
+    };
+
+    class Gui_LambdaCheckBoxStrategy : public Gui_CheckBoxStrategy
+    {
+    public:
+        Gui_LambdaCheckBoxStrategy(
+            const WCHAR* labelText,
+            const std::function<bool()>& readValue,
+            const std::function<void( bool )>& writeValue,
+            const std::function<void( GuiRuntimeContext& )>& syncToRuntime,
+            const std::function<void( const GuiRuntimeContext& )>& syncFromRuntime,
+            UINT hotkey )
+            : m_labelText( labelText ? labelText : L"" ),
+              m_readValue( readValue ),
+              m_writeValue( writeValue ),
+              m_syncToRuntime( syncToRuntime ),
+              m_syncFromRuntime( syncFromRuntime ),
+              m_hotkey( hotkey )
+        {
+        }
+
+        virtual const WCHAR* GetLabelText() const
+        {
+            return m_labelText.c_str();
+        }
+
+        virtual UINT GetHotkey() const
+        {
+            return m_hotkey;
+        }
+
+        virtual bool ReadValue() const
+        {
+            return m_readValue();
+        }
+
+        virtual void WriteValue( bool checked )
+        {
+            m_writeValue( checked );
+        }
+
+        virtual void SyncToRuntime( GuiRuntimeContext& runtime )
+        {
+            m_syncToRuntime( runtime );
+        }
+
+        virtual void SyncFromRuntime( const GuiRuntimeContext& runtime )
+        {
+            m_syncFromRuntime( runtime );
+        }
+
+    private:
+        std::wstring m_labelText;
+        std::function<bool()> m_readValue;
+        std::function<void( bool )> m_writeValue;
+        std::function<void( GuiRuntimeContext& )> m_syncToRuntime;
+        std::function<void( const GuiRuntimeContext& )> m_syncFromRuntime;
+        UINT m_hotkey;
+    };
+
+    class Gui_LambdaComboBoxStrategy : public Gui_ComboBoxStrategy
+    {
+    public:
+        Gui_LambdaComboBoxStrategy(
+            const WCHAR* labelText,
+            const std::function<void( CDXUTComboBox& )>& populate,
+            const std::function<void( CDXUTComboBox& )>& refreshSelection,
+            const std::function<void( CDXUTComboBox& )>& writeSelection,
+            const std::function<void( GuiRuntimeContext& )>& syncToRuntime,
+            const std::function<void( const GuiRuntimeContext& )>& syncFromRuntime,
+            UINT hotkey )
+            : m_labelText( labelText ? labelText : L"" ),
+              m_populate( populate ),
+              m_refreshSelection( refreshSelection ),
+              m_writeSelection( writeSelection ),
+              m_syncToRuntime( syncToRuntime ),
+              m_syncFromRuntime( syncFromRuntime ),
+              m_hotkey( hotkey )
+        {
+        }
+
+        virtual const WCHAR* GetLabelText() const
+        {
+            return m_labelText.c_str();
+        }
+
+        virtual UINT GetHotkey() const
+        {
+            return m_hotkey;
+        }
+
+        virtual void Populate( CDXUTComboBox& comboBox ) const
+        {
+            m_populate( comboBox );
+        }
+
+        virtual void RefreshSelection( CDXUTComboBox& comboBox ) const
+        {
+            m_refreshSelection( comboBox );
+        }
+
+        virtual void WriteSelection( CDXUTComboBox& comboBox )
+        {
+            m_writeSelection( comboBox );
+        }
+
+        virtual void SyncToRuntime( GuiRuntimeContext& runtime )
+        {
+            m_syncToRuntime( runtime );
+        }
+
+        virtual void SyncFromRuntime( const GuiRuntimeContext& runtime )
+        {
+            m_syncFromRuntime( runtime );
+        }
+
+    private:
+        std::wstring m_labelText;
+        std::function<void( CDXUTComboBox& )> m_populate;
+        std::function<void( CDXUTComboBox& )> m_refreshSelection;
+        std::function<void( CDXUTComboBox& )> m_writeSelection;
+        std::function<void( GuiRuntimeContext& )> m_syncToRuntime;
+        std::function<void( const GuiRuntimeContext& )> m_syncFromRuntime;
+        UINT m_hotkey;
+    };
+}
+
 GuiPanelLayout::GuiPanelLayout()
     : x( 0 ),
       y( 10 ),
@@ -389,7 +583,10 @@ void GuiPanelBase::Initialize( CDXUTDialogResourceManager* pResourceManager,
                                PCALLBACKDXUTGUIEVENT pCallback,
                                const GuiPanelLayout& layout )
 {
-    m_controls.clear();
+    m_ownedSliderStrategies.clear();
+    m_ownedCheckBoxStrategies.clear();
+    m_ownedComboBoxStrategies.clear();
+    m_ownedControls.clear();
     m_dialog.Init( pResourceManager );
     m_dialog.SetCallback( pCallback );
 
@@ -408,9 +605,9 @@ void GuiPanelBase::Update()
 
 void GuiPanelBase::UpdateFromRuntime( const GuiRuntimeContext& runtime )
 {
-    for( size_t i = 0; i < m_controls.size(); ++i )
+    for( size_t i = 0; i < m_ownedControls.size(); ++i )
     {
-        m_controls[i]->UpdateFromRuntime( runtime );
+        m_ownedControls[i]->UpdateFromRuntime( runtime );
     }
     Update();
 }
@@ -418,14 +615,14 @@ void GuiPanelBase::UpdateFromRuntime( const GuiRuntimeContext& runtime )
 void GuiPanelBase::ApplyPendingChanges( GuiRuntimeContext& runtime )
 {
     bool didApplyChanges = false;
-    for( size_t i = 0; i < m_controls.size(); ++i )
+    for( size_t i = 0; i < m_ownedControls.size(); ++i )
     {
-        if( !m_controls[i]->HasPendingChanges() )
+        if( !m_ownedControls[i]->HasPendingChanges() )
         {
             continue;
         }
 
-        m_controls[i]->ApplyPendingChanges( runtime );
+        m_ownedControls[i]->ApplyPendingChanges( runtime );
         didApplyChanges = true;
     }
 
@@ -437,9 +634,9 @@ void GuiPanelBase::ApplyPendingChanges( GuiRuntimeContext& runtime )
 
 bool GuiPanelBase::HasPendingChanges() const
 {
-    for( size_t i = 0; i < m_controls.size(); ++i )
+    for( size_t i = 0; i < m_ownedControls.size(); ++i )
     {
-        if( m_controls[i]->HasPendingChanges() )
+        if( m_ownedControls[i]->HasPendingChanges() )
         {
             return true;
         }
@@ -495,9 +692,9 @@ void GuiPanelBase::SetSize( INT width, INT height )
 
 void GuiPanelBase::SetEnabled( bool enabled )
 {
-    for( size_t i = 0; i < m_controls.size(); ++i )
+    for( size_t i = 0; i < m_ownedControls.size(); ++i )
     {
-        m_controls[i]->SetEnabled( enabled );
+        m_ownedControls[i]->SetEnabled( enabled );
     }
 }
 
@@ -526,11 +723,11 @@ bool GuiPanelBase::HandleEvent( UINT nEvent, INT controlId )
         return false;
     }
 
-    for( size_t i = 0; i < m_controls.size(); ++i )
+    for( size_t i = 0; i < m_ownedControls.size(); ++i )
     {
-        if( m_controls[i]->Handles( controlId ) )
+        if( m_ownedControls[i]->Handles( controlId ) )
         {
-            m_controls[i]->HandleEvent( nEvent );
+            m_ownedControls[i]->HandleEvent( nEvent );
             return true;
         }
     }
@@ -548,9 +745,85 @@ const CDXUTDialog& GuiPanelBase::Dialog() const
     return m_dialog;
 }
 
-void GuiPanelBase::RegisterControl( Gui_ControlBase& control )
+Gui_CheckBoxControl& GuiPanelBase::AddCheckBox(
+    GuiControlFactory& factory,
+    INT checkBoxId,
+    const WCHAR* labelText,
+    const std::function<bool()>& readValue,
+    const std::function<void( bool )>& writeValue,
+    const std::function<void( GuiRuntimeContext& )>& syncToRuntime,
+    const std::function<void( const GuiRuntimeContext& )>& syncFromRuntime,
+    UINT hotkey )
 {
-    m_controls.push_back( &control );
+    std::unique_ptr<Gui_CheckBoxStrategy> strategy(
+        new Gui_LambdaCheckBoxStrategy(
+            labelText,
+            readValue,
+            writeValue,
+            syncToRuntime,
+            syncFromRuntime,
+            hotkey ) );
+    Gui_CheckBoxStrategy& strategyRef = OwnStrategy( m_ownedCheckBoxStrategies, std::move( strategy ) );
+    return OwnControl(
+        factory,
+        std::unique_ptr<Gui_CheckBoxControl>(
+            new Gui_CheckBoxControl( checkBoxId, strategyRef ) ) );
+}
+
+Gui_SliderControl& GuiPanelBase::AddSlider(
+    GuiControlFactory& factory,
+    INT textId,
+    INT sliderId,
+    INT minValue,
+    INT maxValue,
+    const std::function<INT()>& readValue,
+    const std::function<void( INT, UINT )>& writeValue,
+    const std::function<std::wstring( INT )>& formatCaption,
+    const std::function<void( GuiRuntimeContext& )>& syncToRuntime,
+    const std::function<void( const GuiRuntimeContext& )>& syncFromRuntime )
+{
+    std::unique_ptr<Gui_SliderStrategy> strategy(
+        new Gui_LambdaSliderStrategy(
+            minValue,
+            maxValue,
+            readValue,
+            writeValue,
+            formatCaption,
+            syncToRuntime,
+            syncFromRuntime ) );
+    Gui_SliderStrategy& strategyRef = OwnStrategy( m_ownedSliderStrategies, std::move( strategy ) );
+    return OwnControl(
+        factory,
+        std::unique_ptr<Gui_SliderControl>(
+            new Gui_SliderControl( textId, sliderId, strategyRef ) ) );
+}
+
+Gui_ComboBoxControl& GuiPanelBase::AddComboBox(
+    GuiControlFactory& factory,
+    INT labelId,
+    INT comboId,
+    const WCHAR* labelText,
+    const std::function<void( CDXUTComboBox& )>& populate,
+    const std::function<void( CDXUTComboBox& )>& refreshSelection,
+    const std::function<void( CDXUTComboBox& )>& writeSelection,
+    const std::function<void( GuiRuntimeContext& )>& syncToRuntime,
+    const std::function<void( const GuiRuntimeContext& )>& syncFromRuntime,
+    UINT hotkey )
+{
+    std::unique_ptr<Gui_ComboBoxStrategy> strategy(
+        new Gui_LambdaComboBoxStrategy(
+            labelText,
+            populate,
+            refreshSelection,
+            writeSelection,
+            syncToRuntime,
+            syncFromRuntime,
+            hotkey ) );
+    Gui_ComboBoxStrategy& strategyRef = OwnStrategy( m_ownedComboBoxStrategies, std::move( strategy ) );
+    return OwnControl(
+        factory,
+        std::unique_ptr<Gui_ComboBoxControl>(
+            new Gui_ComboBoxControl( labelId, comboId, strategyRef ) ) );
 }
 
 void GuiPanelBase::OnUpdate()
@@ -561,9 +834,9 @@ void GuiPanelBase::OnOpenStateChanged( bool isOpen )
 {
     m_dialog.SetVisible( isOpen );
 
-    for( size_t i = 0; i < m_controls.size(); ++i )
+    for( size_t i = 0; i < m_ownedControls.size(); ++i )
     {
-        m_controls[i]->SetVisible( isOpen );
+        m_ownedControls[i]->SetVisible( isOpen );
     }
 }
 
@@ -574,8 +847,8 @@ bool GuiPanelBase::OnUnhandledEvent( UINT, INT )
 
 void GuiPanelBase::RefreshControls()
 {
-    for( size_t i = 0; i < m_controls.size(); ++i )
+    for( size_t i = 0; i < m_ownedControls.size(); ++i )
     {
-        m_controls[i]->Refresh();
+        m_ownedControls[i]->Refresh();
     }
 }
