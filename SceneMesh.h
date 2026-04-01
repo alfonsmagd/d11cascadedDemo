@@ -20,6 +20,131 @@ struct BoundingBox
     XMFLOAT4 color;
 };
 
+inline void GetBoundingBoxMinMax(const BoundingBox& box, D3DXVECTOR3& vMin, D3DXVECTOR3& vMax)
+{
+    vMin = D3DXVECTOR3(FLT_MAX, FLT_MAX, FLT_MAX);
+    vMax = D3DXVECTOR3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+
+    for (INT cornerIndex = 0; cornerIndex < 8; ++cornerIndex)
+    {
+        const XMFLOAT3& corner = box.corners[cornerIndex];
+        vMin.x = min(vMin.x, corner.x);
+        vMin.y = min(vMin.y, corner.y);
+        vMin.z = min(vMin.z, corner.z);
+        vMax.x = max(vMax.x, corner.x);
+        vMax.y = max(vMax.y, corner.y);
+        vMax.z = max(vMax.z, corner.z);
+    }
+}
+
+inline D3DXVECTOR3 TransformPoint(const D3DXVECTOR3& point, const D3DXMATRIX& transform)
+{
+    D3DXVECTOR3 transformedPoint;
+    D3DXVec3TransformCoord(&transformedPoint, &point, &transform);
+    return transformedPoint;
+}
+
+inline D3DXVECTOR3 TransformDirection(const D3DXVECTOR3& direction, const D3DXMATRIX& transform)
+{
+    D3DXVECTOR3 transformedDirection;
+    D3DXVec3TransformNormal(&transformedDirection, &direction, &transform);
+    return transformedDirection;
+}
+
+inline bool IntersectRayBoundingBox(const D3DXVECTOR3& rayOrigin,
+    const D3DXVECTOR3& rayDirection,
+    const BoundingBox& box,
+    float& hitDistance)
+{
+    const float epsilon = 1.0e-6f;
+    D3DXVECTOR3 vMin;
+    D3DXVECTOR3 vMax;
+    GetBoundingBoxMinMax(box, vMin, vMax);
+
+    float tMin = 0.0f;
+    float tMax = FLT_MAX;
+
+    const float origin[3] = { rayOrigin.x, rayOrigin.y, rayOrigin.z };
+    const float direction[3] = { rayDirection.x, rayDirection.y, rayDirection.z };
+    const float boundsMin[3] = { vMin.x, vMin.y, vMin.z };
+    const float boundsMax[3] = { vMax.x, vMax.y, vMax.z };
+
+    for (INT axis = 0; axis < 3; ++axis)
+    {
+        if (fabsf(direction[axis]) < epsilon)
+        {
+            if (origin[axis] < boundsMin[axis] || origin[axis] > boundsMax[axis])
+            {
+                return false;
+            }
+            continue;
+        }
+
+        const float inverseDirection = 1.0f / direction[axis];
+        float t1 = (boundsMin[axis] - origin[axis]) * inverseDirection;
+        float t2 = (boundsMax[axis] - origin[axis]) * inverseDirection;
+        if (t1 > t2)
+        {
+            std::swap(t1, t2);
+        }
+
+        tMin = max(tMin, t1);
+        tMax = min(tMax, t2);
+        if (tMin > tMax)
+        {
+            return false;
+        }
+    }
+
+    hitDistance = (tMin >= 0.0f) ? tMin : tMax;
+    return hitDistance >= 0.0f;
+}
+
+inline bool IntersectRayTriangle(const D3DXVECTOR3& rayOrigin,
+    const D3DXVECTOR3& rayDirection,
+    const D3DXVECTOR3& v0,
+    const D3DXVECTOR3& v1,
+    const D3DXVECTOR3& v2,
+    float& hitDistance)
+{
+    const float epsilon = 1.0e-6f;
+    const D3DXVECTOR3 edge1 = v1 - v0;
+    const D3DXVECTOR3 edge2 = v2 - v0;
+
+    D3DXVECTOR3 pvec;
+    D3DXVec3Cross(&pvec, &rayDirection, &edge2);
+    const float determinant = D3DXVec3Dot(&edge1, &pvec);
+    if (fabsf(determinant) < epsilon)
+    {
+        return false;
+    }
+
+    const float inverseDeterminant = 1.0f / determinant;
+    const D3DXVECTOR3 tvec = rayOrigin - v0;
+    const float u = D3DXVec3Dot(&tvec, &pvec) * inverseDeterminant;
+    if (u < 0.0f || u > 1.0f)
+    {
+        return false;
+    }
+
+    D3DXVECTOR3 qvec;
+    D3DXVec3Cross(&qvec, &tvec, &edge1);
+    const float v = D3DXVec3Dot(&rayDirection, &qvec) * inverseDeterminant;
+    if (v < 0.0f || (u + v) > 1.0f)
+    {
+        return false;
+    }
+
+    const float distance = D3DXVec3Dot(&edge2, &qvec) * inverseDeterminant;
+    if (distance < 0.0f)
+    {
+        return false;
+    }
+
+    hitDistance = distance;
+    return true;
+}
+
 inline BoundingBox MakeBoundingBoxFromMinMax(const D3DXVECTOR3& vMin, const D3DXVECTOR3& vMax, const XMFLOAT4& color)
 {
     BoundingBox box = {};
@@ -33,6 +158,18 @@ inline BoundingBox MakeBoundingBoxFromMinMax(const D3DXVECTOR3& vMin, const D3DX
     box.corners[6] = XMFLOAT3(vMax.x, vMax.y, vMax.z);
     box.corners[7] = XMFLOAT3(vMin.x, vMax.y, vMax.z);
     return box;
+}
+
+inline BoundingBox TransformBoundingBox(const BoundingBox& box, const D3DXMATRIX& transform)
+{
+    BoundingBox transformedBox = box;
+    for (INT cornerIndex = 0; cornerIndex < 8; ++cornerIndex)
+    {
+        const D3DXVECTOR3 localCorner(box.corners[cornerIndex].x, box.corners[cornerIndex].y, box.corners[cornerIndex].z);
+        const D3DXVECTOR3 transformedCorner = TransformPoint(localCorner, transform);
+        transformedBox.corners[cornerIndex] = XMFLOAT3(transformedCorner.x, transformedCorner.y, transformedCorner.z);
+    }
+    return transformedBox;
 }
 
 
@@ -50,8 +187,12 @@ public:
         UINT iSpecularSlot = INVALID_SAMPLER_SLOT) = 0;
     virtual XMVECTOR GetAABBMin() const = 0;
     virtual XMVECTOR GetAABBMax() const = 0;
+    virtual const D3DXMATRIX& GetWorldMatrix() const = 0;
+    virtual void Translate(const D3DXVECTOR3& delta) = 0;
+    virtual bool TranslateSubMesh(INT subMeshIndex, const D3DXVECTOR3& delta, ID3D11DeviceContext* pd3dDeviceContext) = 0;
     virtual void UpdateGlobalBoundingBox(std::vector<BoundingBox>& globalBoundingBoxes) const = 0;
     virtual void UpdateAllBoundingBoxes(std::vector<BoundingBox>& boundingBoxes) const = 0;
+    virtual bool PickSubMesh(const D3DXVECTOR3& rayOrigin, const D3DXVECTOR3& rayDirection, INT& pickedIndex, float& pickedDistance) const = 0;
 };
 
 class SDKSceneMesh : public ISceneMesh
@@ -62,6 +203,7 @@ public:
         , m_bLoaded(false)
     {
         ResetBounds();
+        ResetTransform();
     }
 
     HRESULT Create(ID3D11Device* pd3dDevice, ID3D11DeviceContext* pd3dDeviceContext) override
@@ -69,8 +211,11 @@ public:
         UNREFERENCED_PARAMETER(pd3dDeviceContext);
 
         ResetBounds();
+        ResetTransform();
         m_SubMeshBoundingBoxes.clear();
-        m_SubMeshBoundingBoxes.reserve(m_Mesh.GetNumMeshes());
+        m_SubMeshTriangles.clear();
+        m_SubMeshPickRanges.clear();
+        m_SubMeshRuntimeData.clear();
 
         HRESULT hr = m_Mesh.Create(pd3dDevice, m_szMeshPath.c_str());
         if (FAILED(hr))
@@ -98,8 +243,88 @@ public:
             m_vAABBMax.y = max(m_vAABBMax.y, meshMax.y);
             m_vAABBMax.z = max(m_vAABBMax.z, meshMax.z);
 
-            m_SubMeshBoundingBoxes.push_back(MakeBoundingBoxFromMinMax(meshMin, meshMax, XMFLOAT4(0, 0, 1, 1)));
+            if (pMesh->NumVertexBuffers == 0)
+            {
+                continue;
+            }
+
+            BYTE* pRawVertices = m_Mesh.GetRawVerticesAt(pMesh->VertexBuffers[0]);
+            BYTE* pRawIndices = m_Mesh.GetRawIndicesAt(pMesh->IndexBuffer);
+            const UINT vertexStride = m_Mesh.GetVertexStride(i, 0);
+            const SDKMESH_INDEX_TYPE indexType = m_Mesh.GetIndexType(i);
+            if (!pRawVertices || !pRawIndices || vertexStride < sizeof(D3DXVECTOR3))
+            {
+                continue;
+            }
+
+            for (UINT subsetIndex = 0; subsetIndex < pMesh->NumSubsets; ++subsetIndex)
+            {
+                SDKMESH_SUBSET* pSubset = m_Mesh.GetSubset(i, subsetIndex);
+                if (!pSubset || pSubset->PrimitiveType != PT_TRIANGLE_LIST)
+                {
+                    continue;
+                }
+
+                const size_t firstTriangle = m_SubMeshTriangles.size();
+                D3DXVECTOR3 subsetMin(FLT_MAX, FLT_MAX, FLT_MAX);
+                D3DXVECTOR3 subsetMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+                UINT triangleCount = 0;
+                std::vector<UINT> subsetVertexIndices;
+                subsetVertexIndices.reserve(UINT(pSubset->IndexCount));
+
+                for (UINT64 indexOffset = 0; indexOffset + 2 < pSubset->IndexCount; indexOffset += 3)
+                {
+                    const UINT64 i0 = pSubset->IndexStart + indexOffset;
+                    const UINT64 i1 = pSubset->IndexStart + indexOffset + 1;
+                    const UINT64 i2 = pSubset->IndexStart + indexOffset + 2;
+
+                    UINT vertexIndex0 = 0;
+                    UINT vertexIndex1 = 0;
+                    UINT vertexIndex2 = 0;
+                    if (indexType == IT_16BIT)
+                    {
+                        const WORD* pIndices16 = reinterpret_cast<const WORD*>(pRawIndices);
+                        vertexIndex0 = pIndices16[i0];
+                        vertexIndex1 = pIndices16[i1];
+                        vertexIndex2 = pIndices16[i2];
+                    }
+                    else
+                    {
+                        const DWORD* pIndices32 = reinterpret_cast<const DWORD*>(pRawIndices);
+                        vertexIndex0 = pIndices32[i0];
+                        vertexIndex1 = pIndices32[i1];
+                        vertexIndex2 = pIndices32[i2];
+                    }
+
+                    subsetVertexIndices.push_back(vertexIndex0);
+                    subsetVertexIndices.push_back(vertexIndex1);
+                    subsetVertexIndices.push_back(vertexIndex2);
+
+                    const D3DXVECTOR3& v0 = *reinterpret_cast<const D3DXVECTOR3*>(pRawVertices + (vertexIndex0 * vertexStride));
+                    const D3DXVECTOR3& v1 = *reinterpret_cast<const D3DXVECTOR3*>(pRawVertices + (vertexIndex1 * vertexStride));
+                    const D3DXVECTOR3& v2 = *reinterpret_cast<const D3DXVECTOR3*>(pRawVertices + (vertexIndex2 * vertexStride));
+
+                    m_SubMeshTriangles.push_back(MakeTriangle(v0, v1, v2));
+                    ExpandBounds(subsetMin, subsetMax, v0);
+                    ExpandBounds(subsetMin, subsetMax, v1);
+                    ExpandBounds(subsetMin, subsetMax, v2);
+                    ++triangleCount;
+                }
+
+                if (triangleCount > 0)
+                {
+                    std::sort(subsetVertexIndices.begin(), subsetVertexIndices.end());
+                    subsetVertexIndices.erase(std::unique(subsetVertexIndices.begin(), subsetVertexIndices.end()), subsetVertexIndices.end());
+                    m_SubMeshBoundingBoxes.push_back(MakeBoundingBoxFromMinMax(subsetMin, subsetMax, XMFLOAT4(0, 0, 1, 1)));
+                    m_SubMeshPickRanges.push_back(MakePickRange(firstTriangle, triangleCount));
+                    SubMeshRuntimeData runtimeData = {};
+                    runtimeData.meshIndex = i;
+                    runtimeData.vertexIndices.swap(subsetVertexIndices);
+                    m_SubMeshRuntimeData.push_back(runtimeData);
+                }
+            }
         }
+        RebuildSceneBoundsFromSubMeshes();
         m_SceneBounding = MakeBoundingBoxFromMinMax(m_vAABBMin, m_vAABBMax, XMFLOAT4(1, 0, 1, 1));
       
 
@@ -112,6 +337,10 @@ public:
         m_Mesh.Destroy();
         m_bLoaded = false;
         m_SubMeshBoundingBoxes.clear();
+        m_SubMeshTriangles.clear();
+        m_SubMeshPickRanges.clear();
+        m_SubMeshRuntimeData.clear();
+        ResetTransform();
         ResetBounds();
     }
 
@@ -130,23 +359,86 @@ public:
 
     XMVECTOR GetAABBMin() const override
     {
-        return XMVectorSet(m_vAABBMin.x, m_vAABBMin.y, m_vAABBMin.z, 1.0f);
+        BoundingBox sceneBounding = TransformBoundingBox(m_SceneBounding, m_mWorld);
+        D3DXVECTOR3 vMin;
+        D3DXVECTOR3 vMax;
+        GetBoundingBoxMinMax(sceneBounding, vMin, vMax);
+        return XMVectorSet(vMin.x, vMin.y, vMin.z, 1.0f);
     }
 
     XMVECTOR GetAABBMax() const override
     {
-        return XMVectorSet(m_vAABBMax.x, m_vAABBMax.y, m_vAABBMax.z, 1.0f);
+        BoundingBox sceneBounding = TransformBoundingBox(m_SceneBounding, m_mWorld);
+        D3DXVECTOR3 vMin;
+        D3DXVECTOR3 vMax;
+        GetBoundingBoxMinMax(sceneBounding, vMin, vMax);
+        return XMVectorSet(vMax.x, vMax.y, vMax.z, 1.0f);
     }
 
-    BoundingBox GetBoundingBox() 
+    const D3DXMATRIX& GetWorldMatrix() const override
     {
+        return m_mWorld;
+    }
+
+    void Translate(const D3DXVECTOR3& delta) override
+    {
+        m_mWorld._41 += delta.x;
+        m_mWorld._42 += delta.y;
+        m_mWorld._43 += delta.z;
+    }
+
+    bool TranslateSubMesh(INT subMeshIndex, const D3DXVECTOR3& delta, ID3D11DeviceContext* pd3dDeviceContext) override
+    {
+        if (!pd3dDeviceContext || subMeshIndex < 0 || subMeshIndex >= INT(m_SubMeshRuntimeData.size()))
+        {
+            return false;
+        }
+
+        const SubMeshRuntimeData& runtimeData = m_SubMeshRuntimeData[subMeshIndex];
+        SDKMESH_MESH* pMesh = m_Mesh.GetMesh(runtimeData.meshIndex);
+        if (!pMesh || pMesh->NumVertexBuffers == 0)
+        {
+            return false;
+        }
+
+        BYTE* pRawVertices = m_Mesh.GetRawVerticesAt(pMesh->VertexBuffers[0]);
+        const UINT vertexStride = m_Mesh.GetVertexStride(runtimeData.meshIndex, 0);
+        ID3D11Buffer* pVertexBuffer = m_Mesh.GetVB11(runtimeData.meshIndex, 0);
+        if (!pRawVertices || !pVertexBuffer || vertexStride < sizeof(D3DXVECTOR3))
+        {
+            return false;
+        }
+
+        for (size_t vertexListIndex = 0; vertexListIndex < runtimeData.vertexIndices.size(); ++vertexListIndex)
+        {
+            D3DXVECTOR3* pPosition = reinterpret_cast<D3DXVECTOR3*>(pRawVertices + (runtimeData.vertexIndices[vertexListIndex] * vertexStride));
+            *pPosition += delta;
+        }
+
+        const SubMeshPickRange& range = m_SubMeshPickRanges[subMeshIndex];
+        for (size_t triangleIndex = range.firstTriangle; triangleIndex < (range.firstTriangle + range.triangleCount); ++triangleIndex)
+        {
+            m_SubMeshTriangles[triangleIndex].v0 += delta;
+            m_SubMeshTriangles[triangleIndex].v1 += delta;
+            m_SubMeshTriangles[triangleIndex].v2 += delta;
+        }
+
+        for (INT cornerIndex = 0; cornerIndex < 8; ++cornerIndex)
+        {
+            m_SubMeshBoundingBoxes[subMeshIndex].corners[cornerIndex].x += delta.x;
+            m_SubMeshBoundingBoxes[subMeshIndex].corners[cornerIndex].y += delta.y;
+            m_SubMeshBoundingBoxes[subMeshIndex].corners[cornerIndex].z += delta.z;
+        }
+
+        RebuildSceneBoundsFromSubMeshes();
         m_SceneBounding = MakeBoundingBoxFromMinMax(m_vAABBMin, m_vAABBMax, XMFLOAT4(1, 0, 1, 1));
-        return m_SceneBounding;
+        pd3dDeviceContext->UpdateSubresource(pVertexBuffer, 0, NULL, pRawVertices, 0, 0);
+        return true;
     }
 
-    const BoundingBox& GetBoundingBox() const
+    BoundingBox GetBoundingBox() const
     {
-        return m_SceneBounding;
+        return TransformBoundingBox(m_SceneBounding, m_mWorld);
     }
 
     void UpdateGlobalBoundingBox(std::vector<BoundingBox>& globalBoundingBoxes) const override
@@ -156,10 +448,126 @@ public:
 
     void UpdateAllBoundingBoxes(std::vector<BoundingBox>& boundingBoxes) const override
     {
-        boundingBoxes.insert(boundingBoxes.end(), m_SubMeshBoundingBoxes.begin(), m_SubMeshBoundingBoxes.end());
+        for (size_t index = 0; index < m_SubMeshBoundingBoxes.size(); ++index)
+        {
+            boundingBoxes.push_back(TransformBoundingBox(m_SubMeshBoundingBoxes[index], m_mWorld));
+        }
+    }
+
+    bool PickSubMesh(const D3DXVECTOR3& rayOrigin, const D3DXVECTOR3& rayDirection, INT& pickedIndex, float& pickedDistance) const override
+    {
+        pickedIndex = -1;
+        pickedDistance = FLT_MAX;
+        D3DXMATRIX inverseWorld;
+        D3DXMatrixInverse(&inverseWorld, NULL, &m_mWorld);
+        const D3DXVECTOR3 localRayOrigin = TransformPoint(rayOrigin, inverseWorld);
+        D3DXVECTOR3 localRayDirection = TransformDirection(rayDirection, inverseWorld);
+        if (D3DXVec3LengthSq(&localRayDirection) <= 0.0f)
+        {
+            return false;
+        }
+        D3DXVec3Normalize(&localRayDirection, &localRayDirection);
+
+        for (size_t subMeshIndex = 0; subMeshIndex < m_SubMeshPickRanges.size(); ++subMeshIndex)
+        {
+            float boxDistance = FLT_MAX;
+            if (!IntersectRayBoundingBox(localRayOrigin, localRayDirection, m_SubMeshBoundingBoxes[subMeshIndex], boxDistance))
+            {
+                continue;
+            }
+
+            if (boxDistance > pickedDistance)
+            {
+                continue;
+            }
+
+            const SubMeshPickRange& range = m_SubMeshPickRanges[subMeshIndex];
+            for (size_t triangleIndex = range.firstTriangle; triangleIndex < (range.firstTriangle + range.triangleCount); ++triangleIndex)
+            {
+                const TriangleData& triangle = m_SubMeshTriangles[triangleIndex];
+                float hitDistance = FLT_MAX;
+                if (IntersectRayTriangle(localRayOrigin, localRayDirection, triangle.v0, triangle.v1, triangle.v2, hitDistance) &&
+                    hitDistance < pickedDistance)
+                {
+                    pickedIndex = INT(subMeshIndex);
+                    pickedDistance = hitDistance;
+                }
+            }
+        }
+
+        return pickedIndex >= 0;
     }
 
 private:
+    struct TriangleData
+    {
+        D3DXVECTOR3 v0;
+        D3DXVECTOR3 v1;
+        D3DXVECTOR3 v2;
+    };
+
+    struct SubMeshPickRange
+    {
+        size_t firstTriangle;
+        size_t triangleCount;
+    };
+
+    struct SubMeshRuntimeData
+    {
+        UINT meshIndex;
+        std::vector<UINT> vertexIndices;
+    };
+
+    static TriangleData MakeTriangle(const D3DXVECTOR3& v0, const D3DXVECTOR3& v1, const D3DXVECTOR3& v2)
+    {
+        TriangleData triangle = {};
+        triangle.v0 = v0;
+        triangle.v1 = v1;
+        triangle.v2 = v2;
+        return triangle;
+    }
+
+    static SubMeshPickRange MakePickRange(size_t firstTriangle, size_t triangleCount)
+    {
+        SubMeshPickRange range = {};
+        range.firstTriangle = firstTriangle;
+        range.triangleCount = triangleCount;
+        return range;
+    }
+
+    static void ExpandBounds(D3DXVECTOR3& vMin, D3DXVECTOR3& vMax, const D3DXVECTOR3& point)
+    {
+        vMin.x = min(vMin.x, point.x);
+        vMin.y = min(vMin.y, point.y);
+        vMin.z = min(vMin.z, point.z);
+        vMax.x = max(vMax.x, point.x);
+        vMax.y = max(vMax.y, point.y);
+        vMax.z = max(vMax.z, point.z);
+    }
+
+    void ResetTransform()
+    {
+        D3DXMatrixIdentity(&m_mWorld);
+    }
+
+    void RebuildSceneBoundsFromSubMeshes()
+    {
+        if (m_SubMeshBoundingBoxes.empty())
+        {
+            return;
+        }
+
+        ResetBounds();
+        for (size_t subMeshIndex = 0; subMeshIndex < m_SubMeshBoundingBoxes.size(); ++subMeshIndex)
+        {
+            D3DXVECTOR3 vSubMin;
+            D3DXVECTOR3 vSubMax;
+            GetBoundingBoxMinMax(m_SubMeshBoundingBoxes[subMeshIndex], vSubMin, vSubMax);
+            ExpandBounds(m_vAABBMin, m_vAABBMax, vSubMin);
+            ExpandBounds(m_vAABBMin, m_vAABBMax, vSubMax);
+        }
+    }
+
     void ResetBounds()
     {
         m_vAABBMin = D3DXVECTOR3(FLT_MAX, FLT_MAX, FLT_MAX);
@@ -173,6 +581,10 @@ private:
     D3DXVECTOR3     m_vAABBMax;
     BoundingBox     m_SceneBounding;
     std::vector<BoundingBox> m_SubMeshBoundingBoxes;
+    std::vector<TriangleData> m_SubMeshTriangles;
+    std::vector<SubMeshPickRange> m_SubMeshPickRanges;
+    std::vector<SubMeshRuntimeData> m_SubMeshRuntimeData;
+    D3DXMATRIX      m_mWorld;
 };
 
 class OBJSceneMesh : public ISceneMesh
@@ -187,17 +599,21 @@ public:
         , m_pFallbackDiffuseSRV(NULL)
     {
         ResetBounds();
+        ResetTransform();
     }
 
 
     void UpdateGlobalBoundingBox(std::vector<BoundingBox>& globalBoundingBoxes) const override
     {
-        globalBoundingBoxes.push_back(MakeBoundingBoxFromMinMax(m_vAABBMin, m_vAABBMax, XMFLOAT4(1, 0, 1, 1)));
+        globalBoundingBoxes.push_back(TransformBoundingBox(MakeBoundingBoxFromMinMax(m_vAABBMin, m_vAABBMax, XMFLOAT4(1, 0, 1, 1)), m_mWorld));
     }
 
     void UpdateAllBoundingBoxes(std::vector<BoundingBox>& boundingBoxes) const override
     {
-        boundingBoxes.insert(boundingBoxes.end(), m_SubsetBoundingBoxes.begin(), m_SubsetBoundingBoxes.end());
+        for (size_t index = 0; index < m_SubsetBoundingBoxes.size(); ++index)
+        {
+            boundingBoxes.push_back(TransformBoundingBox(m_SubsetBoundingBoxes[index], m_mWorld));
+        }
     }
 
 
@@ -207,6 +623,7 @@ public:
         HRESULT hr = S_OK;
 
         Destroy();
+        ResetTransform();
 
         WCHAR strPath[MAX_PATH] = {};
         V_RETURN(DXUTFindDXSDKMediaFileCch(strPath, MAX_PATH, m_szMeshPath.c_str()));
@@ -214,7 +631,7 @@ public:
         std::wstring objPath = strPath;
         const std::wstring basePath = GetDirectory(objPath);
 
-        std::vector<OBJVertex> vertices;
+        std::vector<MeshVertex> vertices;
         std::vector<UINT> indices;
         std::vector<UINT> triangleMaterials;
         std::vector<MaterialDesc> materials;
@@ -239,7 +656,7 @@ public:
         }
 
         D3D11_BUFFER_DESC vbDesc = {};
-        vbDesc.ByteWidth = UINT(vertices.size() * sizeof(OBJVertex));
+        vbDesc.ByteWidth = UINT(vertices.size() * sizeof(MeshVertex));
         vbDesc.Usage = D3D11_USAGE_DEFAULT;
         vbDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 
@@ -276,6 +693,9 @@ public:
         }
 
         BuildSubsetBoundingBoxes(vertices, indices);
+        m_CpuVertices = vertices;
+        m_CpuIndices = indices;
+        BuildSubsetVertexIndices();
 
         V_RETURN(CreateFallbackTexture(pd3dDevice));
 
@@ -314,8 +734,12 @@ public:
         m_Materials.clear();
         m_Subsets.clear();
         m_SubsetBoundingBoxes.clear();
+        m_SubsetVertexIndices.clear();
+        m_CpuVertices.clear();
+        m_CpuIndices.clear();
         SAFE_RELEASE(m_pFallbackDiffuseSRV);
         m_bLoaded = false;
+        ResetTransform();
         ResetBounds();
     }
 
@@ -334,7 +758,7 @@ public:
             return;
         }
 
-        const UINT stride = sizeof(OBJVertex);
+        const UINT stride = sizeof(MeshVertex);
         const UINT offset = 0;
         pd3dDeviceContext->IASetVertexBuffers(0, 1, &m_pVertexBuffer, &stride, &offset);
         pd3dDeviceContext->IASetIndexBuffer(m_pIndexBuffer, DXGI_FORMAT_R32_UINT, 0);
@@ -370,16 +794,120 @@ public:
 
     XMVECTOR GetAABBMin() const override
     {
-        return XMVectorSet(m_vAABBMin.x, m_vAABBMin.y, m_vAABBMin.z, 1.0f);
+        BoundingBox sceneBounding = TransformBoundingBox(MakeBoundingBoxFromMinMax(m_vAABBMin, m_vAABBMax, XMFLOAT4(1, 0, 1, 1)), m_mWorld);
+        D3DXVECTOR3 vMin;
+        D3DXVECTOR3 vMax;
+        GetBoundingBoxMinMax(sceneBounding, vMin, vMax);
+        return XMVectorSet(vMin.x, vMin.y, vMin.z, 1.0f);
     }
 
     XMVECTOR GetAABBMax() const override
     {
-        return XMVectorSet(m_vAABBMax.x, m_vAABBMax.y, m_vAABBMax.z, 1.0f);
+        BoundingBox sceneBounding = TransformBoundingBox(MakeBoundingBoxFromMinMax(m_vAABBMin, m_vAABBMax, XMFLOAT4(1, 0, 1, 1)), m_mWorld);
+        D3DXVECTOR3 vMin;
+        D3DXVECTOR3 vMax;
+        GetBoundingBoxMinMax(sceneBounding, vMin, vMax);
+        return XMVectorSet(vMax.x, vMax.y, vMax.z, 1.0f);
+    }
+
+    const D3DXMATRIX& GetWorldMatrix() const override
+    {
+        return m_mWorld;
+    }
+
+    void Translate(const D3DXVECTOR3& delta) override
+    {
+        m_mWorld._41 += delta.x;
+        m_mWorld._42 += delta.y;
+        m_mWorld._43 += delta.z;
+    }
+
+    bool TranslateSubMesh(INT subMeshIndex, const D3DXVECTOR3& delta, ID3D11DeviceContext* pd3dDeviceContext) override
+    {
+        if (!pd3dDeviceContext || !m_pVertexBuffer || subMeshIndex < 0 || subMeshIndex >= INT(m_SubsetVertexIndices.size()))
+        {
+            return false;
+        }
+
+        for (size_t vertexListIndex = 0; vertexListIndex < m_SubsetVertexIndices[subMeshIndex].size(); ++vertexListIndex)
+        {
+            const UINT vertexIndex = m_SubsetVertexIndices[subMeshIndex][vertexListIndex];
+            if (vertexIndex < m_CpuVertices.size())
+            {
+                m_CpuVertices[vertexIndex].position += delta;
+            }
+        }
+
+        if (subMeshIndex < INT(m_SubsetBoundingBoxes.size()))
+        {
+            for (INT cornerIndex = 0; cornerIndex < 8; ++cornerIndex)
+            {
+                m_SubsetBoundingBoxes[subMeshIndex].corners[cornerIndex].x += delta.x;
+                m_SubsetBoundingBoxes[subMeshIndex].corners[cornerIndex].y += delta.y;
+                m_SubsetBoundingBoxes[subMeshIndex].corners[cornerIndex].z += delta.z;
+            }
+        }
+
+        RebuildSceneBoundsFromSubsets();
+        pd3dDeviceContext->UpdateSubresource(m_pVertexBuffer, 0, NULL, m_CpuVertices.data(), 0, 0);
+        return true;
+    }
+
+    bool PickSubMesh(const D3DXVECTOR3& rayOrigin, const D3DXVECTOR3& rayDirection, INT& pickedIndex, float& pickedDistance) const override
+    {
+        pickedIndex = -1;
+        pickedDistance = FLT_MAX;
+        D3DXMATRIX inverseWorld;
+        D3DXMatrixInverse(&inverseWorld, NULL, &m_mWorld);
+        const D3DXVECTOR3 localRayOrigin = TransformPoint(rayOrigin, inverseWorld);
+        D3DXVECTOR3 localRayDirection = TransformDirection(rayDirection, inverseWorld);
+        if (D3DXVec3LengthSq(&localRayDirection) <= 0.0f)
+        {
+            return false;
+        }
+        D3DXVec3Normalize(&localRayDirection, &localRayDirection);
+
+        for (size_t subsetIndex = 0; subsetIndex < m_Subsets.size(); ++subsetIndex)
+        {
+            const Subset& subset = m_Subsets[subsetIndex];
+            for (UINT indexOffset = 0; indexOffset + 2 < subset.IndexCount; indexOffset += 3)
+            {
+                const UINT i0 = subset.IndexStart + indexOffset;
+                const UINT i1 = subset.IndexStart + indexOffset + 1;
+                const UINT i2 = subset.IndexStart + indexOffset + 2;
+                if (i2 >= m_CpuIndices.size())
+                {
+                    continue;
+                }
+
+                const UINT v0Index = m_CpuIndices[i0];
+                const UINT v1Index = m_CpuIndices[i1];
+                const UINT v2Index = m_CpuIndices[i2];
+                if (v0Index >= m_CpuVertices.size() || v1Index >= m_CpuVertices.size() || v2Index >= m_CpuVertices.size())
+                {
+                    continue;
+                }
+
+                float hitDistance = FLT_MAX;
+                if (IntersectRayTriangle(localRayOrigin,
+                    localRayDirection,
+                    m_CpuVertices[v0Index].position,
+                    m_CpuVertices[v1Index].position,
+                    m_CpuVertices[v2Index].position,
+                    hitDistance) &&
+                    hitDistance < pickedDistance)
+                {
+                    pickedIndex = INT(subsetIndex);
+                    pickedDistance = hitDistance;
+                }
+            }
+        }
+
+        return pickedIndex >= 0;
     }
 
 private:
-    struct OBJVertex
+    struct MeshVertex
     {
         D3DXVECTOR3 position;
         D3DXVECTOR3 normal;
@@ -484,7 +1012,12 @@ private:
         m_vAABBMax = D3DXVECTOR3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
     }
 
-    void BuildSubsetBoundingBoxes(const std::vector<OBJVertex>& vertices, const std::vector<UINT>& indices)
+    void ResetTransform()
+    {
+        D3DXMatrixIdentity(&m_mWorld);
+    }
+
+    void BuildSubsetBoundingBoxes(const std::vector<MeshVertex>& vertices, const std::vector<UINT>& indices)
     {
         m_SubsetBoundingBoxes.clear();
         m_SubsetBoundingBoxes.reserve(m_Subsets.size());
@@ -498,13 +1031,13 @@ private:
 
             for (UINT indexOffset = 0; indexOffset < subset.IndexCount; ++indexOffset)
             {
-                const UINT meshIndex = subset.IndexStart + indexOffset;
-                if (meshIndex >= indices.size())
+                const UINT indexBufferPosition = subset.IndexStart + indexOffset;
+                if (indexBufferPosition >= indices.size())
                 {
                     continue;
                 }
 
-                const UINT vertexIndex = indices[meshIndex];
+                const UINT vertexIndex = indices[indexBufferPosition];
                 if (vertexIndex >= vertices.size())
                 {
                     continue;
@@ -524,6 +1057,53 @@ private:
             {
                 m_SubsetBoundingBoxes.push_back(MakeBoundingBoxFromMinMax(subsetMin, subsetMax, XMFLOAT4(0, 0, 1, 1)));
             }
+        }
+    }
+
+    void BuildSubsetVertexIndices()
+    {
+        m_SubsetVertexIndices.clear();
+        m_SubsetVertexIndices.resize(m_Subsets.size());
+
+        for (size_t subsetIndex = 0; subsetIndex < m_Subsets.size(); ++subsetIndex)
+        {
+            const Subset& subset = m_Subsets[subsetIndex];
+            std::vector<UINT>& subsetVertexIndices = m_SubsetVertexIndices[subsetIndex];
+            subsetVertexIndices.reserve(subset.IndexCount);
+
+            for (UINT indexOffset = 0; indexOffset < subset.IndexCount; ++indexOffset)
+            {
+                const UINT indexBufferPosition = subset.IndexStart + indexOffset;
+                if (indexBufferPosition < m_CpuIndices.size())
+                {
+                    subsetVertexIndices.push_back(m_CpuIndices[indexBufferPosition]);
+                }
+            }
+
+            std::sort(subsetVertexIndices.begin(), subsetVertexIndices.end());
+            subsetVertexIndices.erase(std::unique(subsetVertexIndices.begin(), subsetVertexIndices.end()), subsetVertexIndices.end());
+        }
+    }
+
+    void RebuildSceneBoundsFromSubsets()
+    {
+        if (m_SubsetBoundingBoxes.empty())
+        {
+            return;
+        }
+
+        ResetBounds();
+        for (size_t subsetIndex = 0; subsetIndex < m_SubsetBoundingBoxes.size(); ++subsetIndex)
+        {
+            D3DXVECTOR3 subsetMin;
+            D3DXVECTOR3 subsetMax;
+            GetBoundingBoxMinMax(m_SubsetBoundingBoxes[subsetIndex], subsetMin, subsetMax);
+            m_vAABBMin.x = min(m_vAABBMin.x, subsetMin.x);
+            m_vAABBMin.y = min(m_vAABBMin.y, subsetMin.y);
+            m_vAABBMin.z = min(m_vAABBMin.z, subsetMin.z);
+            m_vAABBMax.x = max(m_vAABBMax.x, subsetMax.x);
+            m_vAABBMax.y = max(m_vAABBMax.y, subsetMax.y);
+            m_vAABBMax.z = max(m_vAABBMax.z, subsetMax.z);
         }
     }
 
@@ -600,7 +1180,7 @@ private:
         const std::vector<D3DXVECTOR3>& positions,
         const std::vector<D3DXVECTOR3>& normals,
         const std::vector<D3DXVECTOR2>& texcoords,
-        std::vector<OBJVertex>& vertices,
+        std::vector<MeshVertex>& vertices,
         std::unordered_map<std::string, UINT>& vertexLookup)
     {
         std::unordered_map<std::string, UINT>::const_iterator cached = vertexLookup.find(token);
@@ -623,7 +1203,7 @@ private:
             return 0;
         }
 
-        OBJVertex vertex = {};
+        MeshVertex vertex = {};
         vertex.position = positions[pos];
         vertex.normal = (nrm >= 0 && nrm < (int)normals.size()) ? normals[nrm] : D3DXVECTOR3(0.0f, 1.0f, 0.0f);
         vertex.texcoord = (uv >= 0 && uv < (int)texcoords.size()) ? texcoords[uv] : D3DXVECTOR2(0.0f, 0.0f);
@@ -636,7 +1216,7 @@ private:
 
     HRESULT ParseOBJ(const std::wstring& objPath,
         std::string& mtlFile,
-        std::vector<OBJVertex>& vertices,
+        std::vector<MeshVertex>& vertices,
         std::vector<UINT>& indices,
         std::vector<UINT>& triangleMaterials,
         std::vector<MaterialDesc>& materials,
@@ -813,7 +1393,11 @@ private:
     ID3D11ShaderResourceView*       m_pFallbackDiffuseSRV;
     std::vector<Subset>             m_Subsets;
     std::vector<BoundingBox>        m_SubsetBoundingBoxes;
+    std::vector<std::vector<UINT>>  m_SubsetVertexIndices;
     std::vector<MaterialResources>  m_Materials;
+    std::vector<MeshVertex>         m_CpuVertices;
+    std::vector<UINT>               m_CpuIndices;
     D3DXVECTOR3                     m_vAABBMin;
     D3DXVECTOR3                     m_vAABBMax;
+    D3DXMATRIX                      m_mWorld;
 };

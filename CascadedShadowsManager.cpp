@@ -25,6 +25,20 @@ static const XMVECTORF32 g_vHalfVector = { 0.5f, 0.5f, 0.5f, 0.5f };
 static const XMVECTORF32 g_vMultiplySetzwToZero = { 1.0f, 1.0f, 0.0f, 0.0f };
 static const XMVECTORF32 g_vZero = { 0.0f, 0.0f, 0.0f, 0.0f };
 
+namespace
+{
+    const XMFLOAT4 kSubMeshBoundingBoxColor = XMFLOAT4( 0.0f, 0.0f, 1.0f, 1.0f );
+    const XMFLOAT4 kSelectedBoundingBoxColor = XMFLOAT4( 0.0f, 1.0f, 0.0f, 1.0f );
+
+    void RestoreBoundingBoxColors( std::vector<BoundingBox>& boundingBoxes, INT selectedIndex )
+    {
+        for( size_t index = 0; index < boundingBoxes.size(); ++index )
+        {
+            boundingBoxes[index].color = ( INT( index ) == selectedIndex ) ? kSelectedBoundingBoxColor : kSubMeshBoundingBoxColor;
+        }
+    }
+}
+
 struct VOXEL_CUBE_VERTEX
 {
     D3DXVECTOR3 Position;
@@ -231,17 +245,25 @@ HRESULT CascadedShadowsManager::EnsureRenderScenePixelShader(ID3D11Device* pd3dD
 HRESULT CascadedShadowsManager::UpdateBoundingBoxBuffer( ID3D11Device* pd3dDevice, const ISceneMesh* pMesh )
 {
     HRESULT hr = S_OK;
+    const INT preservedSelectedBoundingBox = m_iSelectedBoundingBox;
 
     m_SceneBoundingBoxes.clear();
     m_nBoundingBoxes = 0;
     m_AllBoundingBoxes.clear();
     m_nAllBoundingBoxes = 0;
+    m_iSelectedBoundingBox = -1;
 
     if( pMesh )
     {
-        pMesh->UpdateGlobalBoundingBox( m_SceneBoundingBoxes );
+        //pMesh->UpdateGlobalBoundingBox( m_SceneBoundingBoxes );
         pMesh->UpdateAllBoundingBoxes( m_AllBoundingBoxes );
     }
+
+    if( preservedSelectedBoundingBox >= 0 && preservedSelectedBoundingBox < INT( m_AllBoundingBoxes.size() ) )
+    {
+        m_iSelectedBoundingBox = preservedSelectedBoundingBox;
+    }
+    RestoreBoundingBoxColors( m_AllBoundingBoxes, m_iSelectedBoundingBox );
 
     SAFE_RELEASE( m_pBoundingBoxSRV );
     SAFE_RELEASE( m_pBoundingBoxBuffer );
@@ -311,6 +333,103 @@ HRESULT CascadedShadowsManager::UpdateBoundingBoxBuffer( ID3D11Device* pd3dDevic
     m_nBoundingBoxes = UINT( m_SceneBoundingBoxes.size() );
     m_nAllBoundingBoxes = UINT( m_AllBoundingBoxes.size() );
     return hr;
+}
+
+HRESULT CascadedShadowsManager::PickDebugBoundingBox( ID3D11DeviceContext* pd3dDeviceContext,
+                                                      const ISceneMesh* pMesh,
+                                                      INT mouseX,
+                                                      INT mouseY,
+                                                      const D3D11_VIEWPORT& viewport )
+{
+    if( !pd3dDeviceContext || !pMesh || m_AllBoundingBoxes.empty() || !m_pBoundingAllBoxBuffer )
+    {
+        return S_FALSE;
+    }
+
+    D3DXMATRIX dxmatProj = *m_pViewerCamera->GetProjMatrix();
+    D3DXMATRIX dxmatView = *m_pViewerCamera->GetViewMatrix();
+    if( m_eSelectedCamera == LIGHT_CAMERA )
+    {
+        dxmatProj = *m_pLightCamera->GetProjMatrix();
+        dxmatView = *m_pLightCamera->GetViewMatrix();
+    }
+    else if( m_eSelectedCamera >= ORTHO_CAMERA1 )
+    {
+        dxmatProj = m_matShadowProj[(INT)m_eSelectedCamera - 2];
+        dxmatView = m_matShadowView;
+    }
+
+    const D3DVIEWPORT9 d3dxViewport =
+    {
+        DWORD( viewport.TopLeftX ),
+        DWORD( viewport.TopLeftY ),
+        DWORD( viewport.Width ),
+        DWORD( viewport.Height ),
+        viewport.MinDepth,
+        viewport.MaxDepth
+    };
+
+    D3DXMATRIX dxmatIdentity;
+    D3DXMatrixIdentity( &dxmatIdentity );
+
+    D3DXVECTOR3 nearPoint( (FLOAT)mouseX, (FLOAT)mouseY, 0.0f );
+    D3DXVECTOR3 farPoint( (FLOAT)mouseX, (FLOAT)mouseY, 1.0f );
+    D3DXVECTOR3 worldNear;
+    D3DXVECTOR3 worldFar;
+    D3DXVec3Unproject( &worldNear, &nearPoint, &d3dxViewport, &dxmatProj, &dxmatView, &dxmatIdentity );
+    D3DXVec3Unproject( &worldFar, &farPoint, &d3dxViewport, &dxmatProj, &dxmatView, &dxmatIdentity );
+
+    D3DXVECTOR3 rayDirection = worldFar - worldNear;
+    if( D3DXVec3LengthSq( &rayDirection ) <= 0.0f )
+    {
+        return S_FALSE;
+    }
+    D3DXVec3Normalize( &rayDirection, &rayDirection );
+
+    INT pickedIndex = -1;
+    float pickedDistance = FLT_MAX;
+    pMesh->PickSubMesh( worldNear, rayDirection, pickedIndex, pickedDistance );
+
+    if( pickedIndex == m_iSelectedBoundingBox )
+    {
+        return S_OK;
+    }
+
+    m_iSelectedBoundingBox = pickedIndex;
+    RestoreBoundingBoxColors( m_AllBoundingBoxes, m_iSelectedBoundingBox );
+    pd3dDeviceContext->UpdateSubresource( m_pBoundingAllBoxBuffer, 0, NULL, m_AllBoundingBoxes.data(), 0, 0 );
+    return S_OK;
+}
+
+HRESULT CascadedShadowsManager::TranslateSelectedSubMesh( ID3D11Device* pd3dDevice,
+                                                          ID3D11DeviceContext* pd3dDeviceContext,
+                                                          ISceneMesh* pMesh,
+                                                          const D3DXVECTOR3& delta )
+{
+    if( !pd3dDevice || !pd3dDeviceContext || !pMesh )
+    {
+        return E_INVALIDARG;
+    }
+
+    if( m_iSelectedBoundingBox < 0 )
+    {
+        return S_FALSE;
+    }
+
+    if( !pMesh->TranslateSubMesh( m_iSelectedBoundingBox, delta, pd3dDeviceContext ) )
+    {
+        return S_FALSE;
+    }
+
+    m_vSceneAABBMin = pMesh->GetAABBMin();
+    m_vSceneAABBMax = pMesh->GetAABBMax();
+    m_vStaticVoxelAABBMin = m_vSceneAABBMin;
+    m_vStaticVoxelAABBMax = m_vSceneAABBMax;
+    m_vDynamicVoxelAABBMin = m_vSceneAABBMin;
+    m_vDynamicVoxelAABBMax = m_vSceneAABBMax;
+    m_bStaticVoxelizationDirty = true;
+
+    return UpdateBoundingBoxBuffer( pd3dDevice, pMesh );
 }
 
 
@@ -1595,19 +1714,16 @@ HRESULT CascadedShadowsManager::RenderShadowsForAllCascades(ID3D11Device* pd3dDe
 
         // Each cascade has its own viewport because we're storing all the cascades in one large texture.
         pd3dDeviceContext->RSSetViewports(1, &m_RenderVP[currentCascade]);
-        dxmatWorld = *m_pLightCamera->GetWorldMatrix();
+        dxmatWorld = pMesh ? pMesh->GetWorldMatrix() : *m_pLightCamera->GetWorldMatrix();
 
         // We calculate the matrices in the Init function.
-        dxmatWorldViewProjection = m_matShadowView * m_matShadowProj[currentCascade];
+        dxmatWorldViewProjection = dxmatWorld * m_matShadowView * m_matShadowProj[currentCascade];
 
         D3D11_MAPPED_SUBRESOURCE MappedResource;
         V(pd3dDeviceContext->Map(m_pcbGlobalConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
         CB_ALL_SHADOW_DATA* pcbAllShadowConstants = (CB_ALL_SHADOW_DATA*)MappedResource.pData;
         D3DXMatrixTranspose(&pcbAllShadowConstants->m_WorldViewProj, &dxmatWorldViewProjection);
-        D3DXMATRIX matIdentity;
-        D3DXMatrixIdentity(&matIdentity);
-        // The model was exported in world space, so we can pass the identity up as the world transform.
-        D3DXMatrixTranspose(&pcbAllShadowConstants->m_World, &matIdentity);
+        D3DXMatrixTranspose(&pcbAllShadowConstants->m_World, &dxmatWorld);
         pd3dDeviceContext->Unmap(m_pcbGlobalConstantBuffer, 0);
         pd3dDeviceContext->IASetInputLayout(m_pVertexLayoutMesh);
 
@@ -1652,6 +1768,15 @@ HRESULT CascadedShadowsManager::RenderScene(ID3D11DeviceContext* pd3dDeviceConte
 
     D3DXMATRIX dxmatCameraProj = *pActiveCamera->GetProjMatrix();
     D3DXMATRIX dxmatCameraView = *pActiveCamera->GetViewMatrix();
+    D3DXMATRIX dxmatWorld;
+    if( pMesh )
+    {
+        dxmatWorld = pMesh->GetWorldMatrix();
+    }
+    else
+    {
+        D3DXMatrixIdentity( &dxmatWorld );
+    }
 
     // The user has the option to view the ortho shadow cameras.
     if (m_eSelectedCamera >= ORTHO_CAMERA1)
@@ -1663,12 +1788,13 @@ HRESULT CascadedShadowsManager::RenderScene(ID3D11DeviceContext* pd3dDeviceConte
         dxmatCameraView = m_matShadowView;
     }
 
-    D3DXMATRIX dxmatWorldViewProjection = dxmatCameraView * dxmatCameraProj;
+    D3DXMATRIX dxmatWorldView = dxmatWorld * dxmatCameraView;
+    D3DXMATRIX dxmatWorldViewProjection = dxmatWorldView * dxmatCameraProj;
 
     V(pd3dDeviceContext->Map(m_pcbGlobalConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
     CB_ALL_SHADOW_DATA* pcbAllShadowConstants = (CB_ALL_SHADOW_DATA*)MappedResource.pData;
     D3DXMatrixTranspose(&pcbAllShadowConstants->m_WorldViewProj, &dxmatWorldViewProjection);
-    D3DXMatrixTranspose(&pcbAllShadowConstants->m_WorldView, &dxmatCameraView);
+    D3DXMatrixTranspose(&pcbAllShadowConstants->m_WorldView, &dxmatWorldView);
     // These are the for loop begin end values. 
     pcbAllShadowConstants->m_iPCFBlurForLoopEnd = m_iPCFBlurSize / 2 + 1;
     pcbAllShadowConstants->m_iPCFBlurForLoopStart = m_iPCFBlurSize / -2;
@@ -1676,9 +1802,7 @@ HRESULT CascadedShadowsManager::RenderScene(ID3D11DeviceContext* pd3dDeviceConte
     pcbAllShadowConstants->m_fCascadeBlendArea = m_fBlurBetweenCascadesAmount;
     pcbAllShadowConstants->m_fTexelSize = 1.0f / (float)m_CopyOfCascadeConfig.m_iBufferSize;
     pcbAllShadowConstants->m_fNativeTexelSizeInX = pcbAllShadowConstants->m_fTexelSize / m_CopyOfCascadeConfig.m_nCascadeLevels;
-    D3DXMATRIX dxmatIdentity;
-    D3DXMatrixIdentity(&dxmatIdentity);
-    D3DXMatrixTranspose(&pcbAllShadowConstants->m_World, &dxmatIdentity);
+    D3DXMatrixTranspose(&pcbAllShadowConstants->m_World, &dxmatWorld);
     D3DXMATRIX dxmatTextureScale;
     D3DXMatrixScaling(&dxmatTextureScale,
         0.5f,
@@ -1693,7 +1817,8 @@ HRESULT CascadedShadowsManager::RenderScene(ID3D11DeviceContext* pd3dDeviceConte
     pcbAllShadowConstants->m_fShadowBiasFromGUI = m_fPCFOffset;
     pcbAllShadowConstants->m_fShadowPartitionSize = 1.0f / (float)m_CopyOfCascadeConfig.m_nCascadeLevels;
 
-    D3DXMatrixTranspose(&pcbAllShadowConstants->m_Shadow, &m_matShadowView);
+    D3DXMATRIX dxmatWorldShadow = dxmatWorld * m_matShadowView;
+    D3DXMatrixTranspose(&pcbAllShadowConstants->m_Shadow, &dxmatWorldShadow);
     for (int index = 0; index < m_CopyOfCascadeConfig.m_nCascadeLevels; ++index)
     {
         D3DXMATRIX mShadowTexture = m_matShadowProj[index] * dxmatTextureScale * dxmatTextureTranslation;
@@ -1954,10 +2079,19 @@ HRESULT CascadedShadowsManager::RenderVoxelizationVolume(ID3D11DeviceContext* pd
     V_RETURN(pd3dDeviceContext->Map(m_pcbGlobalConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
     CB_ALL_SHADOW_DATA* pcbAllShadowConstants = (CB_ALL_SHADOW_DATA*)MappedResource.pData;
 
+    D3DXMATRIX dxmatWorld;
+    if (pMesh)
+    {
+        dxmatWorld = pMesh->GetWorldMatrix();
+    }
+    else
+    {
+        D3DXMatrixIdentity(&dxmatWorld);
+    }
     D3DXMATRIX dxmatIdentity;
     D3DXMatrixIdentity(&dxmatIdentity);
     D3DXMatrixTranspose(&pcbAllShadowConstants->m_WorldViewProj, &dxmatIdentity);
-    D3DXMatrixTranspose(&pcbAllShadowConstants->m_World, &dxmatIdentity);
+    D3DXMatrixTranspose(&pcbAllShadowConstants->m_World, &dxmatWorld);
     pd3dDeviceContext->Unmap(m_pcbGlobalConstantBuffer, 0);
 
     V_RETURN(pd3dDeviceContext->Map(m_pcbVoxelParams, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));

@@ -78,6 +78,8 @@ public:
     void SetRenderDebugAllBoundingBoxesEnabled(bool enabled) { m_bRenderDebugAllBoundingBoxes = enabled; }
     bool IsRenderDebugBoundingBoxEnabled() const { return m_bRenderDebugBoundingBox; }
     bool IsRenderDebugAllBoundingBoxesEnabled() const { return m_bRenderDebugAllBoundingBoxes; }
+    HRESULT PickDebugBoundingBox( ID3D11DeviceContext* pd3dDeviceContext, const ISceneMesh* pMesh, INT mouseX, INT mouseY, const D3D11_VIEWPORT& viewport );
+    HRESULT TranslateSelectedSubMesh( ID3D11Device* pd3dDevice, ID3D11DeviceContext* pd3dDeviceContext, ISceneMesh* pMesh, const D3DXVECTOR3& delta );
 
     FLOAT                               m_fStaticVoxelHeightWarp = 0.55f;
     FLOAT                               m_fVoxelVisualizeSurfaceSnap = 0.22f;
@@ -175,43 +177,44 @@ private:
     CascadeConfig*                      m_pCascadeConfig;           // Pointer to the most recent setting.
 
 // D3D11 variables
-    ID3D11InputLayout*                  m_pVertexLayoutMesh;
+    ID3D11InputLayout*                  m_pVertexLayoutMesh = nullptr;
     ID3D11InputLayout*                  m_pVertexLayoutVoxelVisualize = nullptr;
 
-    ID3D11VertexShader*                 m_pvsRenderOrthoShadow;
-    ID3D11VertexShader*                 m_pvsVoxelization;
+    ID3D11VertexShader*                 m_pvsRenderOrthoShadow = nullptr;
+    ID3D11VertexShader*                 m_pvsVoxelization = nullptr;
 
-    ID3DBlob*                           m_pgsVoxelizationBlob;
+    ID3DBlob*                           m_pgsVoxelizationBlob = nullptr;
 
-    ID3DBlob*                           m_pvsRenderOrthoShadowBlob;
-    ID3DBlob*                           m_pvsVoxelizationBlob;
+    ID3DBlob*                           m_pvsRenderOrthoShadowBlob = nullptr;
+    ID3DBlob*                           m_pvsVoxelizationBlob = nullptr;
     ID3D11VertexShader*                 m_pvsRenderScene[MAX_CASCADES];
-    ID3D11VertexShader*                 m_pvsDebug;
+    ID3D11VertexShader*                 m_pvsDebug = nullptr;
     ID3D11VertexShader*                 m_pvsDebugBoundingBox = nullptr;
     ID3D11VertexShader*                 m_pvsVisualizeVoxelization = nullptr;
-	ID3DBlob*                           m_pvsDebugBlob;
+	ID3DBlob*                           m_pvsDebugBlob = nullptr;
     ID3DBlob*                           m_pvsDebugBoundingBoxBlob = nullptr;
     ID3DBlob*                           m_pvsVisualizeVoxelizationBlob = nullptr;
     ID3DBlob*                           m_pvsRenderSceneBlob[MAX_CASCADES];
     ID3D11PixelShader*                  m_ppsRenderSceneAllShaders[MAX_CASCADES][2][2][2];
     ID3DBlob*                           m_ppsRenderSceneAllShadersBlob[MAX_CASCADES][2][2][2];
-	ID3D11PixelShader*                  m_ppsDebug;
+	ID3D11PixelShader*                  m_ppsDebug = nullptr;
     ID3D11PixelShader*                  m_ppsDebugBoundingBox = nullptr;
     ID3D11PixelShader*                  m_ppsVisualizeVoxelization = nullptr;
-    ID3D11PixelShader*                  m_ppsVoxelization;
-    ID3D11GeometryShader*               m_pgsVoxelization;
-    ID3DBlob*                           m_ppsVoxelizationBlob;
-	ID3DBlob*                           m_ppsDebugBlob;
+    ID3D11PixelShader*                  m_ppsVoxelization = nullptr;
+    ID3D11GeometryShader*               m_pgsVoxelization = nullptr;
+    ID3DBlob*                           m_ppsVoxelizationBlob = nullptr;
+	ID3DBlob*                           m_ppsDebugBlob = nullptr;
     ID3DBlob*                           m_ppsDebugBoundingBoxBlob = nullptr;
     ID3DBlob*                           m_ppsVisualizeVoxelizationBlob = nullptr;
 
-    ID3D11Texture2D*                    m_pCascadedShadowMapTexture ;
-    ID3D11DepthStencilView*             m_pCascadedShadowMapDSV ;
-    ID3D11ShaderResourceView*           m_pCascadedShadowMapSRV ;
+    ID3D11Texture2D*                    m_pCascadedShadowMapTexture = nullptr;
+    ID3D11DepthStencilView*             m_pCascadedShadowMapDSV = nullptr;
+    ID3D11ShaderResourceView*           m_pCascadedShadowMapSRV = nullptr;
     std::vector<BoundingBox>            m_SceneBoundingBoxes;
     UINT                                m_nBoundingBoxes = 0;
     std::vector<BoundingBox>            m_AllBoundingBoxes;
     UINT                                m_nAllBoundingBoxes = 0;
+    INT                                 m_iSelectedBoundingBox = -1;
 
 
     ID3D11Texture3D*                    m_pVoxelAlbedoTex = nullptr;
@@ -238,7 +241,7 @@ private:
 
 
 #if  TEXTURE_2D_SHADOWMAP 
-	ID3D11Texture2D*                    m_pCascadedShadowMapTextureArray;
+	ID3D11Texture2D*                    m_pCascadedShadowMapTextureArray = nullptr;
 #endif
 
     ID3D11Buffer*                       m_pBoundingBoxBuffer = nullptr;
@@ -247,28 +250,28 @@ private:
     ID3D11Buffer*                       m_pBoundingAllBoxBuffer = nullptr;
     ID3D11ShaderResourceView*           m_pBoundingAllBoxSRV = nullptr;
 
-    ID3D11Buffer*                       m_pcbVoxelParams;
+    ID3D11Buffer*                       m_pcbVoxelParams = nullptr;
     ID3D11Buffer*                       m_pcbVisualizeVoxels = nullptr;
-    ID3D11Buffer*                       m_pcbGlobalConstantBuffer; // All VS and PS constants are in the same buffer.  
+    ID3D11Buffer*                       m_pcbGlobalConstantBuffer = nullptr; // All VS and PS constants are in the same buffer.  
                                                           // An actual title would break this up into multiple 
                                                           // buffers updated based on frequency of variable changes
 
-    ID3D11RasterizerState*              m_prsScene;
+    ID3D11RasterizerState*              m_prsScene = nullptr;
     ID3D11RasterizerState*              m_prsVoxelization = nullptr;
-    ID3D11RasterizerState*              m_prsShadow;
-    ID3D11RasterizerState*              m_prsShadowPancake;
-    ID3D11RasterizerState*              m_prsDebug;
+    ID3D11RasterizerState*              m_prsShadow = nullptr;
+    ID3D11RasterizerState*              m_prsShadowPancake = nullptr;
+    ID3D11RasterizerState*              m_prsDebug = nullptr;
     ID3D11BlendState*                   m_pbsVoxelVisualize = nullptr;
     
     D3D11_VIEWPORT                      m_RenderVP[MAX_CASCADES];
     D3D11_VIEWPORT                      m_RenderOneTileVP;
 
-    CFirstPersonCamera*                 m_pViewerCamera;         
-    CFirstPersonCamera*                 m_pLightCamera;         
+    CFirstPersonCamera*                 m_pViewerCamera = nullptr;         
+    CFirstPersonCamera*                 m_pLightCamera = nullptr;         
 
-    ID3D11SamplerState*                 m_pSamLinear;
-    ID3D11SamplerState*                 m_pSamShadowPCF;
-    ID3D11SamplerState*                 m_pSamShadowPoint;
+    ID3D11SamplerState*                 m_pSamLinear = nullptr;
+    ID3D11SamplerState*                 m_pSamShadowPCF = nullptr;
+    ID3D11SamplerState*                 m_pSamShadowPoint = nullptr;
 };
 
 #pragma warning(pop)

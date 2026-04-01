@@ -466,17 +466,6 @@ void InitApp()
     g_CascadedShadow.m_iCascadePartitionsZeroToOne[6] = 100;
     g_CascadedShadow.m_iCascadePartitionsZeroToOne[7] = 100;
 
-
-    // Pick some arbitrary intervals for the Cascade Maps
-    //g_CascadedShadow.m_iCascadePartitionsZeroToOne[0] = 2;
-    //g_CascadedShadow.m_iCascadePartitionsZeroToOne[1] = 4;
-    //g_CascadedShadow.m_iCascadePartitionsZeroToOne[2] = 6;
-    //g_CascadedShadow.m_iCascadePartitionsZeroToOne[3] = 9;
-    //g_CascadedShadow.m_iCascadePartitionsZeroToOne[4] = 13;
-    //g_CascadedShadow.m_iCascadePartitionsZeroToOne[5] = 26;
-    //g_CascadedShadow.m_iCascadePartitionsZeroToOne[6] = 36;
-    //g_CascadedShadow.m_iCascadePartitionsZeroToOne[7] = 70;
-
     g_CascadedShadow.m_iCascadePartitionsMax = 100;
     g_D3DSettingsDlg.Init( &g_DialogResourceManager );
     g_SelectorPanel.Initialize( &g_DialogResourceManager, OnGUIEvent );
@@ -584,6 +573,28 @@ LRESULT CALLBACK MsgProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, bo
     if( *pbNoFurtherProcessing )
         return 0;
 
+    if( uMsg == WM_LBUTTONDOWN && g_CascadedShadow.IsRenderDebugAllBoundingBoxesEnabled() )
+    {
+        ID3D11DeviceContext* pd3dDeviceContext = DXUTGetD3D11DeviceContext();
+        if( pd3dDeviceContext )
+        {
+            RECT clientRect = {};
+            GetClientRect( hWnd, &clientRect );
+
+            D3D11_VIEWPORT viewport = {};
+            viewport.TopLeftX = 0.0f;
+            viewport.TopLeftY = 0.0f;
+            viewport.Width = FLOAT( clientRect.right - clientRect.left );
+            viewport.Height = FLOAT( clientRect.bottom - clientRect.top );
+            viewport.MinDepth = 0.0f;
+            viewport.MaxDepth = 1.0f;
+
+            const INT mouseX = (INT)(short)LOWORD( lParam );
+            const INT mouseY = (INT)(short)HIWORD( lParam );
+            g_CascadedShadow.PickDebugBoundingBox( pd3dDeviceContext, g_pSelectedMesh, mouseX, mouseY, viewport );
+        }
+    }
+
     // Pass all remaining windows messages to camera so it can respond to user input
     g_pActiveCamera->HandleMessages( hWnd, uMsg, wParam, lParam );
 
@@ -596,12 +607,64 @@ LRESULT CALLBACK MsgProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, bo
 //--------------------------------------------------------------------------------------
 void CALLBACK OnKeyboard( UINT nChar, bool bKeyDown, bool bAltDown, void* pUserContext )
 {
+    UNREFERENCED_PARAMETER( bAltDown );
+    UNREFERENCED_PARAMETER( pUserContext );
+
     if( bKeyDown )
     {
         switch( nChar )
         {
             case VK_F1:
                 g_bShowHelp = !g_bShowHelp; break;
+
+            case 'J':
+                if( g_pSelectedMesh )
+                {
+                    ID3D11Device* pd3dDevice = DXUTGetD3D11Device();
+                    ID3D11DeviceContext* pd3dDeviceContext = DXUTGetD3D11DeviceContext();
+                    g_CascadedShadow.TranslateSelectedSubMesh( pd3dDevice, pd3dDeviceContext, g_pSelectedMesh, D3DXVECTOR3( -1.0f, 0.0f, 0.0f ) );
+                }
+            break;
+
+            case 'K':
+                if( g_pSelectedMesh )
+                {
+                    ID3D11Device* pd3dDevice = DXUTGetD3D11Device();
+                    ID3D11DeviceContext* pd3dDeviceContext = DXUTGetD3D11DeviceContext();
+                    g_CascadedShadow.TranslateSelectedSubMesh( pd3dDevice, pd3dDeviceContext, g_pSelectedMesh, D3DXVECTOR3( 1.0f, 0.0f, 0.0f ) );
+                }
+            break;
+            case 'M':
+                if (g_pSelectedMesh)
+                {
+                    ID3D11Device* pd3dDevice = DXUTGetD3D11Device();
+                    ID3D11DeviceContext* pd3dDeviceContext = DXUTGetD3D11DeviceContext();
+                    g_CascadedShadow.TranslateSelectedSubMesh(pd3dDevice, pd3dDeviceContext, g_pSelectedMesh, D3DXVECTOR3(0.0f, 1.0f, 0.0f));
+                }
+                break;
+            case 'I':
+                if (g_pSelectedMesh)
+                {
+                    ID3D11Device* pd3dDevice = DXUTGetD3D11Device();
+                    ID3D11DeviceContext* pd3dDeviceContext = DXUTGetD3D11DeviceContext();
+                    g_CascadedShadow.TranslateSelectedSubMesh(pd3dDevice, pd3dDeviceContext, g_pSelectedMesh, D3DXVECTOR3(0.0f, -1.0f, 0.0f));
+                }
+                break;
+            case 'O':
+                if (g_pSelectedMesh)
+                {
+                    ID3D11Device* pd3dDevice = DXUTGetD3D11Device();
+                    ID3D11DeviceContext* pd3dDeviceContext = DXUTGetD3D11DeviceContext();
+                    g_CascadedShadow.TranslateSelectedSubMesh(pd3dDevice, pd3dDeviceContext, g_pSelectedMesh, D3DXVECTOR3(0.0f, 0.0f, 1.0f));
+                }
+                break;
+            case 'P':
+                if (g_pSelectedMesh)
+                {
+                    ID3D11Device* pd3dDevice = DXUTGetD3D11Device();
+                    ID3D11DeviceContext* pd3dDeviceContext = DXUTGetD3D11DeviceContext();
+                    g_CascadedShadow.TranslateSelectedSubMesh(pd3dDevice, pd3dDeviceContext, g_pSelectedMesh, D3DXVECTOR3(0.0f, 0.0f, -1.0f));
+                }
 
         }
     }
@@ -665,7 +728,7 @@ void CALLBACK OnD3D11DestroyDevice( void* pUserContext )
 {
     g_MeshPowerPlant.Destroy();
     g_MeshTestScene.Destroy();
-    //g_MeshSponza.Destroy();
+    g_MeshSponza.Destroy();
     DestroyD3DComponents();
 }
 
