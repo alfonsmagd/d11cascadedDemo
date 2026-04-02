@@ -47,6 +47,7 @@ void Gui_SelectorPanel::BuildControls( GuiControlFactory& factory )
             comboBox.AddItem( L"Power Plant", ULongToPtr( POWER_PLANT_SCENE ) );
             comboBox.AddItem( L"Test Scene", ULongToPtr( TEST_SCENE ) );
             comboBox.AddItem( L"Sponza", ULongToPtr( SPONZA_SCENE ) );
+            comboBox.AddItem( L"Simple Scene", ULongToPtr( SIMPLE_SCENE ) );
         },
         [this]( CDXUTComboBox& comboBox )
         {

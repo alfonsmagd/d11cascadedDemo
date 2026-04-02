@@ -39,6 +39,7 @@ CascadeConfig               g_CascadeConfig;
 SDKSceneMesh                g_MeshPowerPlant( L"powerplant\\powerplant.sdkmesh" );
 SDKSceneMesh                g_MeshTestScene( L"ShadowColumns\\testscene.sdkmesh" );
 OBJSceneMesh                g_MeshSponza( L"sponza\\sponza.obj", 0.05f );
+SimpleSceneMesh             g_MeshSimpleScene;
 ISceneMesh*                 g_pSelectedMesh = &g_MeshPowerPlant;                
 SCENE_SELECTION             g_eSelectedScene = POWER_PLANT_SCENE;
 
@@ -347,6 +348,10 @@ HRESULT ApplySceneSelectionChange()
             pNewMesh = &g_MeshSponza;
         break;
 
+        case SIMPLE_SCENE:
+            pNewMesh = &g_MeshSimpleScene;
+        break;
+
         case POWER_PLANT_SCENE:
         default:
             pNewMesh = &g_MeshPowerPlant;
@@ -378,9 +383,19 @@ void ResetSceneCameras()
         vecEye = D3DXVECTOR3( -2.0f, 15.5f, -64.0f );
         vecAt = D3DXVECTOR3( -2.0f, 14.0f, 0.0f );
     }
+    else if( ss == SIMPLE_SCENE )
+    {
+        vecEye = D3DXVECTOR3( -9.0f, 6.0f, -12.0f );
+        vecAt = D3DXVECTOR3( 0.0f, 1.0f, 0.0f );
+    }
 
     D3DXVECTOR3 vMin = D3DXVECTOR3( -2500.0f, -2500.0f, -2500.0f );
     D3DXVECTOR3 vMax = D3DXVECTOR3( 2500.0f, 2500.0f, 2500.0f );
+    if( ss == SIMPLE_SCENE )
+    {
+        vMin = D3DXVECTOR3( -40.0f, -10.0f, -40.0f );
+        vMax = D3DXVECTOR3( 40.0f, 25.0f, 40.0f );
+    }
     g_ViewerCamera.SetViewParams( &vecEye, &vecAt );
     g_ViewerCamera.SetRotateButtons(TRUE, FALSE, FALSE);
     g_ViewerCamera.SetScalers( 0.01f, 10.0f );
@@ -395,6 +410,11 @@ void ResetSceneCameras()
     {
         lightEye = D3DXVECTOR3( -45.0f, 72.5f, -42.5f );
         lightAt = D3DXVECTOR3( 0.0f, 12.5f, 0.0f );
+    }
+    else if( ss == SIMPLE_SCENE )
+    {
+        lightEye = D3DXVECTOR3( -8.0f, 12.0f, -8.0f );
+        lightAt = D3DXVECTOR3( 0.0f, 0.5f, 0.0f );
     }
 
     g_LightCamera.SetViewParams( &lightEye, &lightAt );
@@ -729,6 +749,7 @@ void CALLBACK OnD3D11DestroyDevice( void* pUserContext )
     g_MeshPowerPlant.Destroy();
     g_MeshTestScene.Destroy();
     g_MeshSponza.Destroy();
+    g_MeshSimpleScene.Destroy();
     DestroyD3DComponents();
 }
 

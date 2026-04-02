@@ -1401,3 +1401,566 @@ private:
     D3DXVECTOR3                     m_vAABBMax;
     D3DXMATRIX                      m_mWorld;
 };
+
+class SimpleSceneMesh : public ISceneMesh
+{
+public:
+    SimpleSceneMesh()
+        : m_bLoaded(false)
+        , m_pVertexBuffer(NULL)
+        , m_pIndexBuffer(NULL)
+    {
+        ResetBounds();
+        ResetTransform();
+    }
+
+    HRESULT Create(ID3D11Device* pd3dDevice, ID3D11DeviceContext* pd3dDeviceContext) override
+    {
+        UNREFERENCED_PARAMETER(pd3dDeviceContext);
+
+        Destroy();
+        ResetTransform();
+        ResetBounds();
+
+        BuildGeometry();
+        BuildSubsetAccelerationData();
+        m_SceneBounding = MakeBoundingBoxFromMinMax(m_vAABBMin, m_vAABBMax, XMFLOAT4(1, 0, 1, 1));
+
+        D3D11_BUFFER_DESC vertexBufferDesc = {};
+        vertexBufferDesc.ByteWidth = UINT(sizeof(SimpleVertex) * m_CpuVertices.size());
+        vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+        vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+
+        D3D11_SUBRESOURCE_DATA vertexBufferData = {};
+        vertexBufferData.pSysMem = m_CpuVertices.data();
+        HRESULT hr = pd3dDevice->CreateBuffer(&vertexBufferDesc, &vertexBufferData, &m_pVertexBuffer);
+        if (FAILED(hr))
+        {
+            Destroy();
+            return hr;
+        }
+
+        D3D11_BUFFER_DESC indexBufferDesc = {};
+        indexBufferDesc.ByteWidth = UINT(sizeof(UINT) * m_CpuIndices.size());
+        indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+        indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+
+        D3D11_SUBRESOURCE_DATA indexBufferData = {};
+        indexBufferData.pSysMem = m_CpuIndices.data();
+        hr = pd3dDevice->CreateBuffer(&indexBufferDesc, &indexBufferData, &m_pIndexBuffer);
+        if (FAILED(hr))
+        {
+            Destroy();
+            return hr;
+        }
+
+        hr = CreateSolidColorTexture(pd3dDevice, D3DXCOLOR(0.48f, 0.48f, 0.50f, 1.0f), &m_Subsets[0].pDiffuseSRV);
+        if (FAILED(hr))
+        {
+            Destroy();
+            return hr;
+        }
+
+        hr = CreateSolidColorTexture(pd3dDevice, D3DXCOLOR(0.92f, 0.90f, 0.86f, 1.0f), &m_Subsets[1].pDiffuseSRV);
+        if (FAILED(hr))
+        {
+            Destroy();
+            return hr;
+        }
+
+        m_bLoaded = true;
+        return S_OK;
+    }
+
+    void Destroy() override
+    {
+        SAFE_RELEASE(m_pVertexBuffer);
+        SAFE_RELEASE(m_pIndexBuffer);
+
+        for (size_t subsetIndex = 0; subsetIndex < m_Subsets.size(); ++subsetIndex)
+        {
+            SAFE_RELEASE(m_Subsets[subsetIndex].pDiffuseSRV);
+        }
+
+        m_Subsets.clear();
+        m_SubsetBoundingBoxes.clear();
+        m_SubsetVertexIndices.clear();
+        m_SubMeshTriangles.clear();
+        m_SubMeshPickRanges.clear();
+        m_CpuVertices.clear();
+        m_CpuIndices.clear();
+        m_bLoaded = false;
+        ResetTransform();
+        ResetBounds();
+    }
+
+    bool IsLoaded() const override
+    {
+        return m_bLoaded;
+    }
+
+    void Render(ID3D11DeviceContext* pd3dDeviceContext,
+        UINT iDiffuseSlot = INVALID_SAMPLER_SLOT,
+        UINT iNormalSlot = INVALID_SAMPLER_SLOT,
+        UINT iSpecularSlot = INVALID_SAMPLER_SLOT) override
+    {
+        if (!m_pVertexBuffer || !m_pIndexBuffer)
+        {
+            return;
+        }
+
+        const UINT stride = sizeof(SimpleVertex);
+        const UINT offset = 0;
+        pd3dDeviceContext->IASetVertexBuffers(0, 1, &m_pVertexBuffer, &stride, &offset);
+        pd3dDeviceContext->IASetIndexBuffer(m_pIndexBuffer, DXGI_FORMAT_R32_UINT, 0);
+        pd3dDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+        ID3D11ShaderResourceView* pNullSRV = NULL;
+
+        for (size_t subsetIndex = 0; subsetIndex < m_Subsets.size(); ++subsetIndex)
+        {
+            const Subset& subset = m_Subsets[subsetIndex];
+
+            if (iDiffuseSlot != INVALID_SAMPLER_SLOT)
+            {
+                pd3dDeviceContext->PSSetShaderResources(iDiffuseSlot, 1, &subset.pDiffuseSRV);
+            }
+            if (iNormalSlot != INVALID_SAMPLER_SLOT)
+            {
+                pd3dDeviceContext->PSSetShaderResources(iNormalSlot, 1, &pNullSRV);
+            }
+            if (iSpecularSlot != INVALID_SAMPLER_SLOT)
+            {
+                pd3dDeviceContext->PSSetShaderResources(iSpecularSlot, 1, &pNullSRV);
+            }
+
+            pd3dDeviceContext->DrawIndexed(subset.IndexCount, subset.IndexStart, 0);
+        }
+    }
+
+    XMVECTOR GetAABBMin() const override
+    {
+        BoundingBox sceneBounding = TransformBoundingBox(m_SceneBounding, m_mWorld);
+        D3DXVECTOR3 vMin;
+        D3DXVECTOR3 vMax;
+        GetBoundingBoxMinMax(sceneBounding, vMin, vMax);
+        return XMVectorSet(vMin.x, vMin.y, vMin.z, 1.0f);
+    }
+
+    XMVECTOR GetAABBMax() const override
+    {
+        BoundingBox sceneBounding = TransformBoundingBox(m_SceneBounding, m_mWorld);
+        D3DXVECTOR3 vMin;
+        D3DXVECTOR3 vMax;
+        GetBoundingBoxMinMax(sceneBounding, vMin, vMax);
+        return XMVectorSet(vMax.x, vMax.y, vMax.z, 1.0f);
+    }
+
+    const D3DXMATRIX& GetWorldMatrix() const override
+    {
+        return m_mWorld;
+    }
+
+    void Translate(const D3DXVECTOR3& delta) override
+    {
+        m_mWorld._41 += delta.x;
+        m_mWorld._42 += delta.y;
+        m_mWorld._43 += delta.z;
+    }
+
+    bool TranslateSubMesh(INT subMeshIndex, const D3DXVECTOR3& delta, ID3D11DeviceContext* pd3dDeviceContext) override
+    {
+        if (!pd3dDeviceContext || subMeshIndex < 0 || subMeshIndex >= INT(m_SubsetVertexIndices.size()))
+        {
+            return false;
+        }
+
+        const std::vector<UINT>& subsetVertexIndices = m_SubsetVertexIndices[subMeshIndex];
+        for (size_t vertexListIndex = 0; vertexListIndex < subsetVertexIndices.size(); ++vertexListIndex)
+        {
+            const UINT vertexIndex = subsetVertexIndices[vertexListIndex];
+            if (vertexIndex < m_CpuVertices.size())
+            {
+                m_CpuVertices[vertexIndex].position += delta;
+            }
+        }
+
+        const SubMeshPickRange& pickRange = m_SubMeshPickRanges[subMeshIndex];
+        for (size_t triangleIndex = pickRange.firstTriangle; triangleIndex < (pickRange.firstTriangle + pickRange.triangleCount); ++triangleIndex)
+        {
+            m_SubMeshTriangles[triangleIndex].v0 += delta;
+            m_SubMeshTriangles[triangleIndex].v1 += delta;
+            m_SubMeshTriangles[triangleIndex].v2 += delta;
+        }
+
+        for (INT cornerIndex = 0; cornerIndex < 8; ++cornerIndex)
+        {
+            m_SubsetBoundingBoxes[subMeshIndex].corners[cornerIndex].x += delta.x;
+            m_SubsetBoundingBoxes[subMeshIndex].corners[cornerIndex].y += delta.y;
+            m_SubsetBoundingBoxes[subMeshIndex].corners[cornerIndex].z += delta.z;
+        }
+
+        RebuildSceneBoundsFromSubsets();
+        m_SceneBounding = MakeBoundingBoxFromMinMax(m_vAABBMin, m_vAABBMax, XMFLOAT4(1, 0, 1, 1));
+        pd3dDeviceContext->UpdateSubresource(m_pVertexBuffer, 0, NULL, m_CpuVertices.data(), 0, 0);
+        return true;
+    }
+
+    void UpdateGlobalBoundingBox(std::vector<BoundingBox>& globalBoundingBoxes) const override
+    {
+        globalBoundingBoxes.push_back(TransformBoundingBox(m_SceneBounding, m_mWorld));
+    }
+
+    void UpdateAllBoundingBoxes(std::vector<BoundingBox>& boundingBoxes) const override
+    {
+        for (size_t subsetIndex = 0; subsetIndex < m_SubsetBoundingBoxes.size(); ++subsetIndex)
+        {
+            boundingBoxes.push_back(TransformBoundingBox(m_SubsetBoundingBoxes[subsetIndex], m_mWorld));
+        }
+    }
+
+    bool PickSubMesh(const D3DXVECTOR3& rayOrigin, const D3DXVECTOR3& rayDirection, INT& pickedIndex, float& pickedDistance) const override
+    {
+        pickedIndex = -1;
+        pickedDistance = FLT_MAX;
+
+        D3DXMATRIX inverseWorld;
+        D3DXMatrixInverse(&inverseWorld, NULL, &m_mWorld);
+        const D3DXVECTOR3 localRayOrigin = TransformPoint(rayOrigin, inverseWorld);
+        D3DXVECTOR3 localRayDirection = TransformDirection(rayDirection, inverseWorld);
+        if (D3DXVec3LengthSq(&localRayDirection) <= 0.0f)
+        {
+            return false;
+        }
+        D3DXVec3Normalize(&localRayDirection, &localRayDirection);
+
+        for (size_t subMeshIndex = 0; subMeshIndex < m_SubMeshPickRanges.size(); ++subMeshIndex)
+        {
+            float boxDistance = FLT_MAX;
+            if (!IntersectRayBoundingBox(localRayOrigin, localRayDirection, m_SubsetBoundingBoxes[subMeshIndex], boxDistance))
+            {
+                continue;
+            }
+
+            if (boxDistance > pickedDistance)
+            {
+                continue;
+            }
+
+            const SubMeshPickRange& range = m_SubMeshPickRanges[subMeshIndex];
+            for (size_t triangleIndex = range.firstTriangle; triangleIndex < (range.firstTriangle + range.triangleCount); ++triangleIndex)
+            {
+                const TriangleData& triangle = m_SubMeshTriangles[triangleIndex];
+                float hitDistance = FLT_MAX;
+                if (IntersectRayTriangle(localRayOrigin, localRayDirection, triangle.v0, triangle.v1, triangle.v2, hitDistance) &&
+                    hitDistance < pickedDistance)
+                {
+                    pickedIndex = INT(subMeshIndex);
+                    pickedDistance = hitDistance;
+                }
+            }
+        }
+
+        return pickedIndex >= 0;
+    }
+
+private:
+    struct SimpleVertex
+    {
+        D3DXVECTOR3 position;
+        D3DXVECTOR3 normal;
+        D3DXVECTOR2 texcoord;
+    };
+
+    struct Subset
+    {
+        UINT IndexStart;
+        UINT IndexCount;
+        ID3D11ShaderResourceView* pDiffuseSRV;
+    };
+
+    struct TriangleData
+    {
+        D3DXVECTOR3 v0;
+        D3DXVECTOR3 v1;
+        D3DXVECTOR3 v2;
+    };
+
+    struct SubMeshPickRange
+    {
+        size_t firstTriangle;
+        size_t triangleCount;
+    };
+
+    static void ExpandBounds(D3DXVECTOR3& vMin, D3DXVECTOR3& vMax, const D3DXVECTOR3& point)
+    {
+        vMin.x = min(vMin.x, point.x);
+        vMin.y = min(vMin.y, point.y);
+        vMin.z = min(vMin.z, point.z);
+        vMax.x = max(vMax.x, point.x);
+        vMax.y = max(vMax.y, point.y);
+        vMax.z = max(vMax.z, point.z);
+    }
+
+    static SimpleVertex MakeVertex(float x, float y, float z, float nx, float ny, float nz, float u, float v)
+    {
+        SimpleVertex vertex = {};
+        vertex.position = D3DXVECTOR3(x, y, z);
+        vertex.normal = D3DXVECTOR3(nx, ny, nz);
+        vertex.texcoord = D3DXVECTOR2(u, v);
+        return vertex;
+    }
+
+    static HRESULT CreateSolidColorTexture(ID3D11Device* pd3dDevice, const D3DXCOLOR& color, ID3D11ShaderResourceView** ppSRV)
+    {
+        if (!pd3dDevice || !ppSRV)
+        {
+            return E_INVALIDARG;
+        }
+
+        const UINT rgba =
+            (UINT(color.a * 255.0f) << 24) |
+            (UINT(color.b * 255.0f) << 16) |
+            (UINT(color.g * 255.0f) << 8) |
+            UINT(color.r * 255.0f);
+
+        D3D11_TEXTURE2D_DESC textureDesc = {};
+        textureDesc.Width = 1;
+        textureDesc.Height = 1;
+        textureDesc.MipLevels = 1;
+        textureDesc.ArraySize = 1;
+        textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        textureDesc.SampleDesc.Count = 1;
+        textureDesc.Usage = D3D11_USAGE_IMMUTABLE;
+        textureDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+        D3D11_SUBRESOURCE_DATA textureData = {};
+        textureData.pSysMem = &rgba;
+        textureData.SysMemPitch = sizeof(UINT);
+
+        ID3D11Texture2D* pTexture = NULL;
+        HRESULT hr = pd3dDevice->CreateTexture2D(&textureDesc, &textureData, &pTexture);
+        if (FAILED(hr))
+        {
+            return hr;
+        }
+
+        hr = pd3dDevice->CreateShaderResourceView(pTexture, NULL, ppSRV);
+        SAFE_RELEASE(pTexture);
+        return hr;
+    }
+
+    void BuildGeometry()
+    {
+        m_Subsets.clear();
+        m_SubsetBoundingBoxes.clear();
+        m_SubsetVertexIndices.clear();
+        m_SubMeshTriangles.clear();
+        m_SubMeshPickRanges.clear();
+        m_CpuVertices.clear();
+        m_CpuIndices.clear();
+
+        AddPlaneSubset();
+        AddCubeSubset();
+    }
+
+    void AddPlaneSubset()
+    {
+        const UINT vertexStart = UINT(m_CpuVertices.size());
+        const UINT indexStart = UINT(m_CpuIndices.size());
+        const float planeHalfExtent = 10.0f;
+
+        m_CpuVertices.push_back(MakeVertex(-planeHalfExtent, 0.0f, -planeHalfExtent, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f));
+        m_CpuVertices.push_back(MakeVertex(-planeHalfExtent, 0.0f, planeHalfExtent, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f));
+        m_CpuVertices.push_back(MakeVertex(planeHalfExtent, 0.0f, planeHalfExtent, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f));
+        m_CpuVertices.push_back(MakeVertex(planeHalfExtent, 0.0f, -planeHalfExtent, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f));
+
+        m_CpuIndices.push_back(vertexStart + 0);
+        m_CpuIndices.push_back(vertexStart + 1);
+        m_CpuIndices.push_back(vertexStart + 2);
+        m_CpuIndices.push_back(vertexStart + 0);
+        m_CpuIndices.push_back(vertexStart + 2);
+        m_CpuIndices.push_back(vertexStart + 3);
+
+        Subset subset = {};
+        subset.IndexStart = indexStart;
+        subset.IndexCount = 6;
+        subset.pDiffuseSRV = NULL;
+        m_Subsets.push_back(subset);
+    }
+
+    void AddCubeFace(const D3DXVECTOR3& v0,
+        const D3DXVECTOR3& v1,
+        const D3DXVECTOR3& v2,
+        const D3DXVECTOR3& v3,
+        const D3DXVECTOR3& normal)
+    {
+        const UINT vertexStart = UINT(m_CpuVertices.size());
+        m_CpuVertices.push_back(MakeVertex(v0.x, v0.y, v0.z, normal.x, normal.y, normal.z, 0.0f, 1.0f));
+        m_CpuVertices.push_back(MakeVertex(v1.x, v1.y, v1.z, normal.x, normal.y, normal.z, 0.0f, 0.0f));
+        m_CpuVertices.push_back(MakeVertex(v2.x, v2.y, v2.z, normal.x, normal.y, normal.z, 1.0f, 0.0f));
+        m_CpuVertices.push_back(MakeVertex(v3.x, v3.y, v3.z, normal.x, normal.y, normal.z, 1.0f, 1.0f));
+
+        m_CpuIndices.push_back(vertexStart + 0);
+        m_CpuIndices.push_back(vertexStart + 1);
+        m_CpuIndices.push_back(vertexStart + 2);
+        m_CpuIndices.push_back(vertexStart + 0);
+        m_CpuIndices.push_back(vertexStart + 2);
+        m_CpuIndices.push_back(vertexStart + 3);
+    }
+
+    void AddCubeSubset()
+    {
+        const UINT indexStart = UINT(m_CpuIndices.size());
+        const float minX = -1.0f;
+        const float maxX = 1.0f;
+        const float minY = 0.0f;
+        const float maxY = 2.0f;
+        const float minZ = -1.0f;
+        const float maxZ = 1.0f;
+
+        AddCubeFace(
+            D3DXVECTOR3(minX, minY, maxZ),
+            D3DXVECTOR3(minX, maxY, maxZ),
+            D3DXVECTOR3(maxX, maxY, maxZ),
+            D3DXVECTOR3(maxX, minY, maxZ),
+            D3DXVECTOR3(0.0f, 0.0f, 1.0f));
+
+        AddCubeFace(
+            D3DXVECTOR3(maxX, minY, minZ),
+            D3DXVECTOR3(maxX, maxY, minZ),
+            D3DXVECTOR3(minX, maxY, minZ),
+            D3DXVECTOR3(minX, minY, minZ),
+            D3DXVECTOR3(0.0f, 0.0f, -1.0f));
+
+        AddCubeFace(
+            D3DXVECTOR3(minX, minY, minZ),
+            D3DXVECTOR3(minX, maxY, minZ),
+            D3DXVECTOR3(minX, maxY, maxZ),
+            D3DXVECTOR3(minX, minY, maxZ),
+            D3DXVECTOR3(-1.0f, 0.0f, 0.0f));
+
+        AddCubeFace(
+            D3DXVECTOR3(maxX, minY, maxZ),
+            D3DXVECTOR3(maxX, maxY, maxZ),
+            D3DXVECTOR3(maxX, maxY, minZ),
+            D3DXVECTOR3(maxX, minY, minZ),
+            D3DXVECTOR3(1.0f, 0.0f, 0.0f));
+
+        AddCubeFace(
+            D3DXVECTOR3(minX, maxY, maxZ),
+            D3DXVECTOR3(minX, maxY, minZ),
+            D3DXVECTOR3(maxX, maxY, minZ),
+            D3DXVECTOR3(maxX, maxY, maxZ),
+            D3DXVECTOR3(0.0f, 1.0f, 0.0f));
+
+        AddCubeFace(
+            D3DXVECTOR3(minX, minY, minZ),
+            D3DXVECTOR3(minX, minY, maxZ),
+            D3DXVECTOR3(maxX, minY, maxZ),
+            D3DXVECTOR3(maxX, minY, minZ),
+            D3DXVECTOR3(0.0f, -1.0f, 0.0f));
+
+        Subset subset = {};
+        subset.IndexStart = indexStart;
+        subset.IndexCount = UINT(m_CpuIndices.size()) - indexStart;
+        subset.pDiffuseSRV = NULL;
+        m_Subsets.push_back(subset);
+    }
+
+    void BuildSubsetAccelerationData()
+    {
+        ResetBounds();
+
+        for (size_t subsetIndex = 0; subsetIndex < m_Subsets.size(); ++subsetIndex)
+        {
+            const Subset& subset = m_Subsets[subsetIndex];
+            const size_t firstTriangle = m_SubMeshTriangles.size();
+            D3DXVECTOR3 subsetMin(FLT_MAX, FLT_MAX, FLT_MAX);
+            D3DXVECTOR3 subsetMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+            std::vector<UINT> subsetVertexIndices;
+
+            for (UINT indexOffset = 0; indexOffset + 2 < subset.IndexCount; indexOffset += 3)
+            {
+                const UINT index0 = m_CpuIndices[subset.IndexStart + indexOffset + 0];
+                const UINT index1 = m_CpuIndices[subset.IndexStart + indexOffset + 1];
+                const UINT index2 = m_CpuIndices[subset.IndexStart + indexOffset + 2];
+                const D3DXVECTOR3& v0 = m_CpuVertices[index0].position;
+                const D3DXVECTOR3& v1 = m_CpuVertices[index1].position;
+                const D3DXVECTOR3& v2 = m_CpuVertices[index2].position;
+
+                subsetVertexIndices.push_back(index0);
+                subsetVertexIndices.push_back(index1);
+                subsetVertexIndices.push_back(index2);
+                ExpandBounds(subsetMin, subsetMax, v0);
+                ExpandBounds(subsetMin, subsetMax, v1);
+                ExpandBounds(subsetMin, subsetMax, v2);
+
+                TriangleData triangle = {};
+                triangle.v0 = v0;
+                triangle.v1 = v1;
+                triangle.v2 = v2;
+                m_SubMeshTriangles.push_back(triangle);
+            }
+
+            std::sort(subsetVertexIndices.begin(), subsetVertexIndices.end());
+            subsetVertexIndices.erase(std::unique(subsetVertexIndices.begin(), subsetVertexIndices.end()), subsetVertexIndices.end());
+            m_SubsetVertexIndices.push_back(subsetVertexIndices);
+
+            if (subsetIndex == 0)
+            {
+                subsetMin.y -= 0.02f;
+                subsetMax.y += 0.02f;
+            }
+
+            m_SubsetBoundingBoxes.push_back(MakeBoundingBoxFromMinMax(subsetMin, subsetMax, XMFLOAT4(0, 0, 1, 1)));
+
+            SubMeshPickRange pickRange = {};
+            pickRange.firstTriangle = firstTriangle;
+            pickRange.triangleCount = (subset.IndexCount / 3);
+            m_SubMeshPickRanges.push_back(pickRange);
+
+            ExpandBounds(m_vAABBMin, m_vAABBMax, subsetMin);
+            ExpandBounds(m_vAABBMin, m_vAABBMax, subsetMax);
+        }
+    }
+
+    void RebuildSceneBoundsFromSubsets()
+    {
+        ResetBounds();
+        for (size_t subsetIndex = 0; subsetIndex < m_SubsetBoundingBoxes.size(); ++subsetIndex)
+        {
+            D3DXVECTOR3 subsetMin;
+            D3DXVECTOR3 subsetMax;
+            GetBoundingBoxMinMax(m_SubsetBoundingBoxes[subsetIndex], subsetMin, subsetMax);
+            ExpandBounds(m_vAABBMin, m_vAABBMax, subsetMin);
+            ExpandBounds(m_vAABBMin, m_vAABBMax, subsetMax);
+        }
+    }
+
+    void ResetTransform()
+    {
+        D3DXMatrixIdentity(&m_mWorld);
+    }
+
+    void ResetBounds()
+    {
+        m_vAABBMin = D3DXVECTOR3(FLT_MAX, FLT_MAX, FLT_MAX);
+        m_vAABBMax = D3DXVECTOR3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+    }
+
+    bool                                m_bLoaded;
+    ID3D11Buffer*                       m_pVertexBuffer;
+    ID3D11Buffer*                       m_pIndexBuffer;
+    std::vector<Subset>                 m_Subsets;
+    std::vector<BoundingBox>            m_SubsetBoundingBoxes;
+    std::vector<std::vector<UINT>>      m_SubsetVertexIndices;
+    std::vector<TriangleData>           m_SubMeshTriangles;
+    std::vector<SubMeshPickRange>       m_SubMeshPickRanges;
+    std::vector<SimpleVertex>           m_CpuVertices;
+    std::vector<UINT>                   m_CpuIndices;
+    D3DXVECTOR3                         m_vAABBMin;
+    D3DXVECTOR3                         m_vAABBMax;
+    BoundingBox                         m_SceneBounding;
+    D3DXMATRIX                          m_mWorld;
+};
