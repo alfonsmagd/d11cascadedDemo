@@ -7,30 +7,28 @@
 //--------------------------------------------------------------------------------------
 #include "DXUT.h"
 #include "DXUTcamera.h"
-#include "DXUTgui.h"
-#include "DXUTsettingsDlg.h"
 #include "SDKmisc.h"
 #include "resource.h"
 
 #include "ShadowSampleMisc.h"
 #include "CascadedShadowsManager.h"
-#include "GuiDebugPanel.h"
-#include "GuiSelectorPanel.h"
-#include "GuiShadowPanel.h"
-#include "GuiVoxelPanel.h"
 #include "SceneMesh.h"
+#include "imgui.h"
+#include "imgui_impl_dx11.h"
+#include "imgui_impl_win32.h"
 #include <commdlg.h>
 #include <vector>
 #include "WaitDlg.h"
 
 #pragma comment(lib, "legacy_stdio_definitions.lib")
 
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler( HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam );
+
 //--------------------------------------------------------------------------------------
 // Global variables
 //--------------------------------------------------------------------------------------
 CascadedShadowsManager      g_CascadedShadow;
 
-CDXUTDialogResourceManager  g_DialogResourceManager; // manager for shared resources of dialogs
 CFirstPersonCamera          g_ViewerCamera;          
 CFirstPersonCamera          g_LightCamera;         
 CFirstPersonCamera*         g_pActiveCamera = &g_ViewerCamera;
@@ -43,11 +41,6 @@ SimpleSceneMesh             g_MeshSimpleScene;
 ISceneMesh*                 g_pSelectedMesh = &g_MeshPowerPlant;                
 SCENE_SELECTION             g_eSelectedScene = POWER_PLANT_SCENE;
 
-// DXUT GUI stuff
-CD3DSettingsDlg             g_D3DSettingsDlg;       // Device settings dialog
-CDXUTTextHelper*            g_pTxtHelper = NULL;
-
-
 D3DXMATRIX                  g_mCenterMesh;
 INT                         g_nNumActiveLights;
 INT                         g_nActiveLight;
@@ -59,142 +52,20 @@ FLOAT                       g_fAspectRatio = 1.0f;
 float                       g_fDepthMin;
 float                       g_fDepthMax;
 float                       g_fDepthScale;
+bool                        g_bImGuiInitialized = false;
+bool                        g_bShowImGuiOverlay = true;
+bool                        g_bShowImGuiDemoWindow = false;
+bool                        g_bShowImGuiMetricsWindow = false;
 
-
-//--------------------------------------------------------------------------------------
-// UI control IDs
-//--------------------------------------------------------------------------------------
-#define IDC_TOGGLEFULLSCREEN         1
-#define IDC_TOGGLEWARP               2
-#define IDC_CHANGEDEVICE             3
-
-#define IDC_TOGGLEVISUALIZECASCADES  4
-#define IDC_DEPTHBUFFERFORMAT        5
-
-#define IDC_BUFFER_SIZE              6
-#define IDC_BUFFER_SIZETEXT          7
-#define IDC_SELECTED_CAMERA          8
-
-#define IDC_SELECTED_SCENE           9
-
-#define IDC_CASCADELEVELS            10
-
-#define IDC_CASCADELEVEL1            11
-#define IDC_CASCADELEVEL2            12
-#define IDC_CASCADELEVEL3            13
-#define IDC_CASCADELEVEL4            14
-#define IDC_CASCADELEVEL5            15
-#define IDC_CASCADELEVEL6            16
-#define IDC_CASCADELEVEL7            17
-#define IDC_CASCADELEVEL8            18
-
-#define IDC_CASCADELEVEL1TEXT        19
-#define IDC_CASCADELEVEL2TEXT        20
-#define IDC_CASCADELEVEL3TEXT        21
-#define IDC_CASCADELEVEL4TEXT        22
-#define IDC_CASCADELEVEL5TEXT        23
-#define IDC_CASCADELEVEL6TEXT        24
-#define IDC_CASCADELEVEL7TEXT        25
-#define IDC_CASCADELEVEL8TEXT        26
-
-#define IDC_MOVE_LIGHT_IN_TEXEL_INC  27
-
-#define IDC_FIT_TO_CASCADE           28
-#define IDC_FIT_TO_NEARFAR           29
-#define IDC_CASCADE_SELECT           30
-#define IDC_PCF_SIZE                 31
-#define IDC_PCF_SIZETEXT             32
-#define IDC_TOGGLE_DERIVATIVE_OFFSET 33
-#define IDC_PCF_OFFSET_SIZE          34
-#define IDC_PCF_OFFSET_SIZETEXT      35
-
-#define IDC_BLEND_BETWEEN_MAPS_CHECK 36
-#define IDC_BLEND_MAPS_SLIDER        37
-
-#define IDC_TOGGLE_DEBUG_CASCADES     38
-#define IDC_TOGGLE_VISUALIZE_VOXEL    39
-#define IDC_VOXEL_SURFACE_SNAP_TEXT   40
-#define IDC_VOXEL_SURFACE_SNAP        41
-#define IDC_VOXEL_HEIGHT_WARP_TEXT    42
-#define IDC_VOXEL_HEIGHT_WARP         43
-#define IDC_VOXEL_XY_FOOTPRINT_TEXT   44
-#define IDC_VOXEL_XY_FOOTPRINT        45
-#define IDC_VOXEL_YZ_FOOTPRINT_TEXT   46
-#define IDC_VOXEL_YZ_FOOTPRINT        47
-#define IDC_VOXEL_TOP_COVERAGE_TEXT   48
-#define IDC_VOXEL_TOP_COVERAGE        49
-#define IDC_GUI_CATEGORY_TEXT         50
-#define IDC_GUI_CATEGORY_COMBO        51
-#define IDC_GUI_VISUALIZE_CASCADES    52
-#define IDC_GUI_BLEND_AMOUNT_TEXT     53
-#define IDC_GUI_DEPTHFORMAT_TEXT      54
-#define IDC_GUI_SELECTED_CAMERA_TEXT  55
-#define IDC_GUI_CASCADELEVELS_TEXT    56
-#define IDC_GUI_FIT_TO_CASCADE_TEXT   57
-#define IDC_GUI_FIT_TO_NEARFAR_TEXT   58
-#define IDC_GUI_CASCADE_SELECT_TEXT   59
-#define IDC_GUI_SCENE_TEXT            60
-#define IDC_GUI_SCENE_COMBO           61
-#define IDC_TOGGLE_DEBUG_BOUNDING_BOX 62
-#define IDC_TOGGLE_DEBUG_ALL_BOUNDING_BOXES 63
-
-Gui_SelectorPanelState      g_SelectorGuiState = { GUI_PANEL_CATEGORY_DEBUG, POWER_PLANT_SCENE };
-Gui_SelectorPanelIds        g_SelectorPanelIds = { IDC_GUI_CATEGORY_TEXT, IDC_GUI_CATEGORY_COMBO, IDC_GUI_SCENE_TEXT, IDC_GUI_SCENE_COMBO };
-Gui_SelectorPanel           g_SelectorPanel( g_SelectorPanelIds, g_SelectorGuiState );
-Gui_DebugPanelState         g_DebugGuiState = {};
-Gui_DebugPanelIds           g_DebugPanelIds = { IDC_TOGGLE_DEBUG_CASCADES, IDC_TOGGLE_DEBUG_BOUNDING_BOX, IDC_TOGGLE_DEBUG_ALL_BOUNDING_BOXES };
-Gui_DebugPanel              g_DebugPanel( g_DebugPanelIds, g_DebugGuiState );
-Gui_ShadowPanelState        g_ShadowGuiState = {};
-Gui_ShadowPanelIds          g_ShadowPanelIds =
+enum IMGUI_PANEL_TAB
 {
-    IDC_GUI_VISUALIZE_CASCADES,
-    IDC_GUI_DEPTHFORMAT_TEXT,
-    IDC_DEPTHBUFFERFORMAT,
-    IDC_GUI_SELECTED_CAMERA_TEXT,
-    IDC_SELECTED_CAMERA,
-    IDC_GUI_CASCADELEVELS_TEXT,
-    IDC_CASCADELEVELS,
-    IDC_GUI_FIT_TO_CASCADE_TEXT,
-    IDC_FIT_TO_CASCADE,
-    IDC_GUI_FIT_TO_NEARFAR_TEXT,
-    IDC_FIT_TO_NEARFAR,
-    IDC_GUI_CASCADE_SELECT_TEXT,
-    IDC_CASCADE_SELECT,
-    IDC_BUFFER_SIZETEXT,
-    IDC_BUFFER_SIZE,
-    IDC_PCF_SIZETEXT,
-    IDC_PCF_SIZE,
-    IDC_PCF_OFFSET_SIZETEXT,
-    IDC_PCF_OFFSET_SIZE,
-    IDC_BLEND_BETWEEN_MAPS_CHECK,
-    IDC_GUI_BLEND_AMOUNT_TEXT,
-    IDC_BLEND_MAPS_SLIDER,
-    IDC_TOGGLE_DERIVATIVE_OFFSET,
-    IDC_MOVE_LIGHT_IN_TEXEL_INC,
-    { IDC_CASCADELEVEL1TEXT, IDC_CASCADELEVEL2TEXT, IDC_CASCADELEVEL3TEXT, IDC_CASCADELEVEL4TEXT,
-      IDC_CASCADELEVEL5TEXT, IDC_CASCADELEVEL6TEXT, IDC_CASCADELEVEL7TEXT, IDC_CASCADELEVEL8TEXT },
-    { IDC_CASCADELEVEL1, IDC_CASCADELEVEL2, IDC_CASCADELEVEL3, IDC_CASCADELEVEL4,
-      IDC_CASCADELEVEL5, IDC_CASCADELEVEL6, IDC_CASCADELEVEL7, IDC_CASCADELEVEL8 }
+    IMGUI_PANEL_TAB_SELECTOR = 0,
+    IMGUI_PANEL_TAB_DEBUG,
+    IMGUI_PANEL_TAB_VOXELIZATION,
+    IMGUI_PANEL_TAB_CASCADES
 };
-Gui_ShadowPanel             g_ShadowPanel( g_ShadowPanelIds, g_ShadowGuiState );
-Gui_VoxelPanelState         g_VoxelGuiState = {};
-Gui_VoxelPanelIds           g_VoxelPanelIds =
-{
-    IDC_TOGGLE_VISUALIZE_VOXEL,
-    IDC_VOXEL_SURFACE_SNAP_TEXT,
-    IDC_VOXEL_SURFACE_SNAP,
-    IDC_VOXEL_HEIGHT_WARP_TEXT,
-    IDC_VOXEL_HEIGHT_WARP,
-    IDC_VOXEL_XY_FOOTPRINT_TEXT,
-    IDC_VOXEL_XY_FOOTPRINT,
-    IDC_VOXEL_YZ_FOOTPRINT_TEXT,
-    IDC_VOXEL_YZ_FOOTPRINT,
-    IDC_VOXEL_TOP_COVERAGE_TEXT,
-    IDC_VOXEL_TOP_COVERAGE
-};
-Gui_VoxelPanel              g_VoxelPanel( g_VoxelPanelIds, g_VoxelGuiState );
-GuiRuntimeContext           g_GuiRuntimeContext = { &g_CascadedShadow, &g_CascadeConfig, &g_bVisualizeCascades, &g_bVisualizeVoxel, &g_bMoveLightTexelSize, &g_eSelectedScene, &g_pActiveCamera, &g_ViewerCamera, &g_LightCamera };
-std::vector<GuiPanelBase*>  g_AllGuiPanels;
+
+IMGUI_PANEL_TAB             g_eSelectedImGuiTab = IMGUI_PANEL_TAB_SELECTOR;
 
 //--------------------------------------------------------------------------------------
 // Forward declarations 
@@ -204,7 +75,6 @@ void CALLBACK OnFrameMove( double fTime, FLOAT fElapsedTime, void* pUserContext 
 LRESULT CALLBACK MsgProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, bool* pbNoFurtherProcessing,
                           void* pUserContext );
 void CALLBACK OnKeyboard( UINT nChar, bool bKeyDown, bool bAltDown, void* pUserContext );
-void CALLBACK OnGUIEvent( UINT nEvent, INT nControlID, CDXUTControl* pControl, void* pUserContext );
 bool CALLBACK IsD3D11DeviceAcceptable(const CD3D11EnumAdapterInfo *AdapterInfo, UINT Output, const CD3D11EnumDeviceInfo *DeviceInfo,
                                        DXGI_FORMAT BackBufferFormat, bool bWindowed, void* pUserContext );
 HRESULT CALLBACK OnD3D11CreateDevice( ID3D11Device* pd3dDevice, const DXGI_SURFACE_DESC* pBackBufferSurfaceDesc,
@@ -217,105 +87,730 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
                                   FLOAT fElapsedTime, void* pUserContext );
 
 void InitApp();
-void RenderText();
 HRESULT DestroyD3DComponents();
 HRESULT CreateD3DComponents( ID3D11Device* pd3dDevice );
 void UpdateViewerCameraNearFar();
-void RegisterAllGuiPanels();
-void SyncGuiPanelsToRuntime();
-void SyncGuiPanelsFromRuntime();
-bool HandleRuntimeGuiPanelEvent( UINT nEvent, INT nControlID );
-bool DispatchRuntimeGuiPanelMsg( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam );
-void RenderRuntimeGuiPanels( FLOAT fElapsedTime );
-void UpdateGuiPanelVisibility();
 void ResetSceneCameras();
 HRESULT EnsureSceneMeshLoaded( ID3D11Device* pd3dDevice, ISceneMesh* pMesh );
 HRESULT ApplySceneSelectionChange();
+HRESULT InitializeImGui( ID3D11Device* pd3dDevice, ID3D11DeviceContext* pd3dImmediateContext );
+void ShutdownImGui();
+void RenderImGuiOverlay( ID3D11DeviceContext* pd3dImmediateContext, double fTime, FLOAT fElapsedTime,
+                         ID3D11RenderTargetView* pRTV, ID3D11DepthStencilView* pDSV );
+bool ImGuiWantsToCaptureMessage( UINT uMsg, WPARAM wParam );
+const char* GetSceneSelectionName( SCENE_SELECTION sceneSelection );
+const char* GetShadowTextureFormatName( SHADOW_TEXTURE_FORMAT format );
+const char* GetCameraSelectionName( CAMERA_SELECTION cameraSelection );
+const char* GetProjectionFitName( FIT_PROJECTION_TO_CASCADES fit );
+const char* GetNearFarFitName( FIT_TO_NEAR_FAR fit );
+const char* GetCascadeSelectionName( CASCADE_SELECTION selection );
+void NormalizeShadowSettings( INT editedCascadePartitionIndex = -1 );
+void RenderImGuiSelectorTab();
+void RenderImGuiDebugTab();
+void RenderImGuiVoxelizationTab();
+void RenderImGuiCascadesTab();
 
-void RegisterAllGuiPanels()
+const char* GetSceneSelectionName( SCENE_SELECTION sceneSelection )
 {
-    g_AllGuiPanels.clear();
-    g_AllGuiPanels.push_back( &g_SelectorPanel );
-    g_AllGuiPanels.push_back( &g_DebugPanel );
-    g_AllGuiPanels.push_back( &g_VoxelPanel );
-    g_AllGuiPanels.push_back( &g_ShadowPanel );
-}
-
-void SyncGuiPanelsToRuntime()
-{
-    for( size_t i = 0; i < g_AllGuiPanels.size(); ++i )
+    switch( sceneSelection )
     {
-        g_AllGuiPanels[i]->ApplyPendingChanges( g_GuiRuntimeContext );
-    }
-}
-
-void SyncGuiPanelsFromRuntime()
-{
-    for( size_t i = 0; i < g_AllGuiPanels.size(); ++i )
-    {
-        g_AllGuiPanels[i]->UpdateFromRuntime( g_GuiRuntimeContext );
-    }
-}
-
-bool HandleRuntimeGuiPanelEvent( UINT nEvent, INT nControlID )
-{
-    for( size_t i = 0; i < g_AllGuiPanels.size(); ++i )
-    {
-        if( g_AllGuiPanels[i]->HandleEvent( nEvent, nControlID ) )
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-bool DispatchRuntimeGuiPanelMsg( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
-{
-    for( size_t i = 0; i < g_AllGuiPanels.size(); ++i )
-    {
-        if( g_AllGuiPanels[i]->MsgProc( hWnd, uMsg, wParam, lParam ) )
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-void RenderRuntimeGuiPanels( FLOAT fElapsedTime )
-{
-    for( size_t i = 0; i < g_AllGuiPanels.size(); ++i )
-    {
-        g_AllGuiPanels[i]->OnRender( fElapsedTime );
-    }
-}
-
-void UpdateGuiPanelVisibility()
-{
-    g_SelectorPanel.Open();
-
-    switch( g_SelectorGuiState.selectedCategory )
-    {
-        case GUI_PANEL_CATEGORY_DEBUG:
-            g_DebugPanel.Open();
-            g_VoxelPanel.Close();
-            g_ShadowPanel.Close();
-        break;
-
-        case GUI_PANEL_CATEGORY_VOXELIZATION:
-            g_DebugPanel.Close();
-            g_VoxelPanel.Open();
-            g_ShadowPanel.Close();
-        break;
-
-        case GUI_PANEL_CATEGORY_CASCADES:
+        case POWER_PLANT_SCENE:
+            return "Power Plant";
+        case TEST_SCENE:
+            return "Test Scene";
+        case SPONZA_SCENE:
+            return "Sponza";
+        case SIMPLE_SCENE:
+            return "Simple Scene";
         default:
-            g_DebugPanel.Close();
-            g_VoxelPanel.Close();
-            g_ShadowPanel.Open();
-        break;
+            return "Unknown";
     }
+}
+
+const char* GetShadowTextureFormatName( SHADOW_TEXTURE_FORMAT format )
+{
+    switch( format )
+    {
+        case CASCADE_DXGI_FORMAT_R32_TYPELESS:
+            return "32 bit Buffer";
+        case CASCADE_DXGI_FORMAT_R24G8_TYPELESS:
+            return "24 bit Buffer";
+        case CASCADE_DXGI_FORMAT_R16_TYPELESS:
+            return "16 bit Buffer";
+        case CASCADE_DXGI_FORMAT_R8_TYPELESS:
+            return "8 bit Buffer";
+        default:
+            return "Unknown";
+    }
+}
+
+const char* GetCameraSelectionName( CAMERA_SELECTION cameraSelection )
+{
+    static char cascadeCameraText[32] = {};
+
+    switch( cameraSelection )
+    {
+        case EYE_CAMERA:
+            return "Eye Camera";
+        case LIGHT_CAMERA:
+            return "Light Camera";
+        default:
+            if( cameraSelection >= ORTHO_CAMERA1 && cameraSelection <= ORTHO_CAMERA8 )
+            {
+                sprintf_s( cascadeCameraText, "Cascade Cam %d", ( cameraSelection - ORTHO_CAMERA1 ) + 1 );
+                return cascadeCameraText;
+            }
+            return "Unknown";
+    }
+}
+
+const char* GetProjectionFitName( FIT_PROJECTION_TO_CASCADES fit )
+{
+    switch( fit )
+    {
+        case FIT_TO_SCENE:
+            return "Fit Scene";
+        case FIT_TO_CASCADES:
+            return "Fit Cascades";
+        default:
+            return "Unknown";
+    }
+}
+
+const char* GetNearFarFitName( FIT_TO_NEAR_FAR fit )
+{
+    switch( fit )
+    {
+        case FIT_NEARFAR_SCENE_AABB:
+            return "AABB/Scene NearFar";
+        case FIT_NEARFAR_PANCAKING:
+            return "Pancaking";
+        case FIT_NEARFAR_ZERO_ONE:
+            return "0:1 NearFar";
+        case FIT_NEARFAR_AABB:
+            return "AABB NearFar";
+        default:
+            return "Unknown";
+    }
+}
+
+const char* GetCascadeSelectionName( CASCADE_SELECTION selection )
+{
+    switch( selection )
+    {
+        case CASCADE_SELECTION_MAP:
+            return "Map Selection";
+        case CASCADE_SELECTION_INTERVAL:
+            return "Interval Selection";
+        default:
+            return "Unknown";
+    }
+}
+
+void NormalizeShadowSettings( INT editedCascadePartitionIndex )
+{
+    if( g_CascadeConfig.m_nCascadeLevels < 1 )
+    {
+        g_CascadeConfig.m_nCascadeLevels = 1;
+    }
+    if( g_CascadeConfig.m_nCascadeLevels > MAX_CASCADES )
+    {
+        g_CascadeConfig.m_nCascadeLevels = MAX_CASCADES;
+    }
+
+    const INT maxBufferSize = 8192 / max( g_CascadeConfig.m_nCascadeLevels, 1 );
+    if( g_CascadeConfig.m_iBufferSize < 32 )
+    {
+        g_CascadeConfig.m_iBufferSize = 32;
+    }
+    if( g_CascadeConfig.m_iBufferSize > maxBufferSize )
+    {
+        g_CascadeConfig.m_iBufferSize = maxBufferSize;
+    }
+    g_CascadeConfig.m_iBufferSize = max( 32, ( g_CascadeConfig.m_iBufferSize / 32 ) * 32 );
+
+    if( g_CascadedShadow.m_eSelectedCamera < EYE_CAMERA )
+    {
+        g_CascadedShadow.m_eSelectedCamera = EYE_CAMERA;
+    }
+    const INT maxCameraIndex = 1 + max( g_CascadeConfig.m_nCascadeLevels, 1 );
+    if( g_CascadedShadow.m_eSelectedCamera > maxCameraIndex )
+    {
+        g_CascadedShadow.m_eSelectedCamera = static_cast<CAMERA_SELECTION>( maxCameraIndex );
+    }
+
+    if( editedCascadePartitionIndex >= 0 && editedCascadePartitionIndex < MAX_CASCADES )
+    {
+        INT clampedValue = g_CascadedShadow.m_iCascadePartitionsZeroToOne[editedCascadePartitionIndex];
+        clampedValue = max( 0, min( 100, clampedValue ) );
+        g_CascadedShadow.m_iCascadePartitionsZeroToOne[editedCascadePartitionIndex] = clampedValue;
+
+        for( INT index = 0; index < editedCascadePartitionIndex; ++index )
+        {
+            if( g_CascadedShadow.m_iCascadePartitionsZeroToOne[index] > clampedValue )
+            {
+                g_CascadedShadow.m_iCascadePartitionsZeroToOne[index] = clampedValue;
+            }
+        }
+
+        for( INT index = editedCascadePartitionIndex + 1; index < MAX_CASCADES; ++index )
+        {
+            if( g_CascadedShadow.m_iCascadePartitionsZeroToOne[index] < clampedValue )
+            {
+                g_CascadedShadow.m_iCascadePartitionsZeroToOne[index] = clampedValue;
+            }
+        }
+    }
+
+    for( INT index = 0; index < MAX_CASCADES; ++index )
+    {
+        g_CascadedShadow.m_iCascadePartitionsZeroToOne[index] =
+            max( 0, min( 100, g_CascadedShadow.m_iCascadePartitionsZeroToOne[index] ) );
+    }
+
+    for( INT index = 1; index < MAX_CASCADES; ++index )
+    {
+        if( g_CascadedShadow.m_iCascadePartitionsZeroToOne[index] < g_CascadedShadow.m_iCascadePartitionsZeroToOne[index - 1] )
+        {
+            g_CascadedShadow.m_iCascadePartitionsZeroToOne[index] = g_CascadedShadow.m_iCascadePartitionsZeroToOne[index - 1];
+        }
+    }
+
+    if( g_CascadedShadow.m_eSelectedNearFarFit == FIT_NEARFAR_PANCAKING )
+    {
+        g_CascadedShadow.m_eSelectedCascadeSelection = CASCADE_SELECTION_INTERVAL;
+    }
+
+    if( g_CascadedShadow.m_eSelectedCascadeSelection == CASCADE_SELECTION_INTERVAL )
+    {
+        g_CascadedShadow.m_iCascadePartitionsZeroToOne[max( g_CascadeConfig.m_nCascadeLevels, 1 ) - 1] = 100;
+    }
+
+    if( g_CascadedShadow.m_iPCFBlurSize < 1 )
+    {
+        g_CascadedShadow.m_iPCFBlurSize = 1;
+    }
+    if( ( g_CascadedShadow.m_iPCFBlurSize % 2 ) == 0 )
+    {
+        ++g_CascadedShadow.m_iPCFBlurSize;
+    }
+}
+
+HRESULT InitializeImGui( ID3D11Device* pd3dDevice, ID3D11DeviceContext* pd3dImmediateContext )
+{
+    if( g_bImGuiInitialized )
+    {
+        return S_OK;
+    }
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.IniFilename = NULL;
+
+    ImGui::StyleColorsDark();
+
+    if( !ImGui_ImplWin32_Init( DXUTGetHWND() ) )
+    {
+        ImGui::DestroyContext();
+        return E_FAIL;
+    }
+
+    if( !ImGui_ImplDX11_Init( pd3dDevice, pd3dImmediateContext ) )
+    {
+        ImGui_ImplWin32_Shutdown();
+        ImGui::DestroyContext();
+        return E_FAIL;
+    }
+
+    g_bImGuiInitialized = true;
+    return S_OK;
+}
+
+void ShutdownImGui()
+{
+    if( !g_bImGuiInitialized )
+    {
+        return;
+    }
+
+    ImGui_ImplDX11_Shutdown();
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext();
+    g_bImGuiInitialized = false;
+}
+
+bool ImGuiWantsToCaptureMessage( UINT uMsg, WPARAM wParam )
+{
+    if( !g_bImGuiInitialized )
+    {
+        return false;
+    }
+
+    // Keep the overlay hotkeys responsive even when Dear ImGui owns the keyboard.
+    if( ( uMsg == WM_KEYDOWN || uMsg == WM_SYSKEYDOWN ) && ( wParam == VK_F2 || wParam == VK_F3 ) )
+    {
+        return false;
+    }
+
+    const ImGuiIO& io = ImGui::GetIO();
+    switch( uMsg )
+    {
+        case WM_MOUSEMOVE:
+        case WM_LBUTTONDOWN:
+        case WM_LBUTTONUP:
+        case WM_LBUTTONDBLCLK:
+        case WM_RBUTTONDOWN:
+        case WM_RBUTTONUP:
+        case WM_RBUTTONDBLCLK:
+        case WM_MBUTTONDOWN:
+        case WM_MBUTTONUP:
+        case WM_MBUTTONDBLCLK:
+        case WM_MOUSEWHEEL:
+        case WM_MOUSEHWHEEL:
+        case WM_XBUTTONDOWN:
+        case WM_XBUTTONUP:
+        case WM_XBUTTONDBLCLK:
+            return io.WantCaptureMouse;
+
+        case WM_KEYDOWN:
+        case WM_KEYUP:
+        case WM_SYSKEYDOWN:
+        case WM_SYSKEYUP:
+            return io.WantCaptureKeyboard;
+
+        case WM_CHAR:
+            return io.WantTextInput;
+
+        default:
+            return false;
+    }
+}
+
+void RenderImGuiSelectorTab()
+{
+    ImGui::Text( "%ls", DXUTGetFrameStats( DXUTIsVsyncEnabled() ) );
+    ImGui::Text( "%ls", DXUTGetDeviceStats() );
+    ImGui::Separator();
+
+    if( ImGui::BeginCombo( "Scene", GetSceneSelectionName( g_eSelectedScene ) ) )
+    {
+        for( INT index = POWER_PLANT_SCENE; index <= SIMPLE_SCENE; ++index )
+        {
+            const SCENE_SELECTION sceneSelection = static_cast<SCENE_SELECTION>( index );
+            const bool selected = ( g_eSelectedScene == sceneSelection );
+            if( ImGui::Selectable( GetSceneSelectionName( sceneSelection ), selected ) )
+            {
+                g_eSelectedScene = sceneSelection;
+                if( SUCCEEDED( ApplySceneSelectionChange() ) )
+                {
+                    UpdateViewerCameraNearFar();
+                }
+            }
+            if( selected )
+            {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    const char* activeCameraName = ( g_pActiveCamera == &g_LightCamera ) ? "Light Camera" : "Viewer Camera";
+    if( ImGui::BeginCombo( "Active Camera", activeCameraName ) )
+    {
+        const bool viewerSelected = ( g_pActiveCamera == &g_ViewerCamera );
+        if( ImGui::Selectable( "Viewer Camera", viewerSelected ) )
+        {
+            g_pActiveCamera = &g_ViewerCamera;
+        }
+        if( viewerSelected )
+        {
+            ImGui::SetItemDefaultFocus();
+        }
+
+        const bool lightSelected = ( g_pActiveCamera == &g_LightCamera );
+        if( ImGui::Selectable( "Light Camera", lightSelected ) )
+        {
+            g_pActiveCamera = &g_LightCamera;
+        }
+        ImGui::EndCombo();
+    }
+
+    if( ImGui::Button( "Reset Cameras" ) )
+    {
+        ResetSceneCameras();
+        UpdateViewerCameraNearFar();
+    }
+
+    ImGui::Checkbox( "Show Help", reinterpret_cast<bool*>( &g_bShowHelp ) );
+    ImGui::Checkbox( "Show Demo Window", &g_bShowImGuiDemoWindow );
+    ImGui::Checkbox( "Show Metrics Window", &g_bShowImGuiMetricsWindow );
+
+    if( g_bShowHelp )
+    {
+        ImGui::Separator();
+        ImGui::TextWrapped( "WASD/EQ move the camera. Mouse drag rotates. Left click picks a debug bounding box. J/K/I/M/O/P move the selected submesh." );
+        ImGui::Text( "F1 Help | F2 Controls | F3 Demo" );
+    }
+}
+
+void RenderImGuiDebugTab()
+{
+    bool renderDebug = g_CascadedShadow.IsRenderDebugEnabled();
+    if( ImGui::Checkbox( "Render Debug", &renderDebug ) )
+    {
+        g_CascadedShadow.SetRenderDebugEnabled( renderDebug );
+    }
+
+    bool renderDebugBoundingBox = g_CascadedShadow.IsRenderDebugBoundingBoxEnabled();
+    if( ImGui::Checkbox( "Debug Bounding Box", &renderDebugBoundingBox ) )
+    {
+        g_CascadedShadow.SetRenderDebugBoundingBoxEnabled( renderDebugBoundingBox );
+    }
+
+    bool renderAllBoundingBoxes = g_CascadedShadow.IsRenderDebugAllBoundingBoxesEnabled();
+    if( ImGui::Checkbox( "Render All Bounding Boxes", &renderAllBoundingBoxes ) )
+    {
+        g_CascadedShadow.SetRenderDebugAllBoundingBoxesEnabled( renderAllBoundingBoxes );
+    }
+
+    ImGui::Separator();
+    if( renderDebug )
+    {
+        ID3D11ShaderResourceView* pShadowAtlasSRV = g_CascadedShadow.GetDebugShadowMapSRV();
+        if( pShadowAtlasSRV )
+        {
+            const INT cascadeCount = g_CascadedShadow.GetDebugShadowMapCascadeCount();
+            const float atlasWidth = (FLOAT)g_CascadedShadow.GetDebugShadowMapAtlasWidth();
+            const float atlasHeight = (FLOAT)g_CascadedShadow.GetDebugShadowMapAtlasHeight();
+            const float availableWidth = ImGui::GetContentRegionAvail().x;
+            const float imageWidth = max( 260.0f, min( availableWidth, 760.0f ) );
+            const float imageHeight = imageWidth * ( atlasHeight / max( atlasWidth, 1.0f ) );
+
+            ImGui::Text( "Cascade Shadow Atlas" );
+            ImGui::TextDisabled( "%d cascades | %dx%d", cascadeCount,
+                g_CascadedShadow.GetDebugShadowMapAtlasWidth(),
+                g_CascadedShadow.GetDebugShadowMapAtlasHeight() );
+
+            ImGui::Image( ImTextureRef( (ImTextureID)(UINT_PTR)pShadowAtlasSRV ), ImVec2( imageWidth, imageHeight ) );
+
+            ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+            const ImVec2 imageMin = ImGui::GetItemRectMin();
+            const ImVec2 imageMax = ImGui::GetItemRectMax();
+            pDrawList->AddRect( imageMin, imageMax, IM_COL32( 255, 255, 255, 110 ), 4.0f, 0, 1.5f );
+
+            for( INT cascadeIndex = 0; cascadeIndex < cascadeCount; ++cascadeIndex )
+            {
+                const float tileMinX = imageMin.x + ( imageMax.x - imageMin.x ) * ( (FLOAT)cascadeIndex / (FLOAT)cascadeCount );
+                const float tileMaxX = imageMin.x + ( imageMax.x - imageMin.x ) * ( (FLOAT)( cascadeIndex + 1 ) / (FLOAT)cascadeCount );
+
+                if( cascadeIndex > 0 )
+                {
+                    pDrawList->AddLine( ImVec2( tileMinX, imageMin.y ), ImVec2( tileMinX, imageMax.y ),
+                        IM_COL32( 80, 255, 200, 180 ), 1.0f );
+                }
+
+                char cascadeLabel[16] = {};
+                sprintf_s( cascadeLabel, "C%d", cascadeIndex + 1 );
+                const ImVec2 labelMin( tileMinX + 6.0f, imageMin.y + 6.0f );
+                const ImVec2 labelMax( min( tileMaxX - 6.0f, tileMinX + 38.0f ), imageMin.y + 24.0f );
+                pDrawList->AddRectFilled( labelMin, labelMax, IM_COL32( 8, 12, 18, 200 ), 4.0f );
+                pDrawList->AddText( ImVec2( labelMin.x + 7.0f, labelMin.y + 3.0f ), IM_COL32( 180, 255, 230, 255 ), cascadeLabel );
+            }
+        }
+        else
+        {
+            ImGui::TextDisabled( "The cascade shadow atlas is not allocated yet." );
+        }
+
+        ImGui::Separator();
+    }
+
+    ImGui::TextWrapped( "The red fog, ring, beam and picking all follow the currently selected debug bounding box." );
+}
+
+void RenderImGuiVoxelizationTab()
+{
+    bool voxelizationNeedsRefresh = false;
+
+    ImGui::Checkbox( "Visualize Voxel", &g_bVisualizeVoxel );
+
+    if( ImGui::SliderFloat( "Voxel Snap", &g_CascadedShadow.m_fVoxelVisualizeSurfaceSnap, 0.0f, 1.0f, "%.2f" ) )
+    {
+        g_CascadedShadow.m_fVoxelVisualizeSurfaceSnap = max( 0.0f, min( 1.0f, g_CascadedShadow.m_fVoxelVisualizeSurfaceSnap ) );
+    }
+    if( ImGui::SliderFloat( "Height Warp", &g_CascadedShadow.m_fStaticVoxelHeightWarp, 1.0f, 4.0f, "%.2f" ) )
+    {
+        voxelizationNeedsRefresh = true;
+    }
+    if( ImGui::SliderFloat( "XY Fill", &g_CascadedShadow.m_fVoxelXYFootprintScale, 4.0f, 8.0f, "%.2f" ) )
+    {
+        voxelizationNeedsRefresh = true;
+    }
+    if( ImGui::SliderFloat( "YZ Fill", &g_CascadedShadow.m_fVoxelYZFootprintScale, 4.0f, 8.0f, "%.2f" ) )
+    {
+        voxelizationNeedsRefresh = true;
+    }
+    if( ImGui::SliderFloat( "Top Coverage", &g_CascadedShadow.m_fStaticVoxelTopCoverage, 1.0f, 4.0f, "%.2f" ) )
+    {
+        voxelizationNeedsRefresh = true;
+    }
+
+    if( voxelizationNeedsRefresh )
+    {
+        g_CascadedShadow.InvalidateStaticVoxelization();
+    }
+}
+
+void RenderImGuiCascadesTab()
+{
+    NormalizeShadowSettings();
+
+    ImGui::Checkbox( "Visualize Cascades", &g_bVisualizeCascades );
+
+    if( ImGui::BeginCombo( "Depth Buffer", GetShadowTextureFormatName( g_CascadeConfig.m_ShadowBufferFormat ) ) )
+    {
+        const SHADOW_TEXTURE_FORMAT formats[] =
+        {
+            CASCADE_DXGI_FORMAT_R32_TYPELESS,
+            CASCADE_DXGI_FORMAT_R16_TYPELESS,
+            CASCADE_DXGI_FORMAT_R24G8_TYPELESS
+        };
+
+        for( INT index = 0; index < ARRAYSIZE( formats ); ++index )
+        {
+            const SHADOW_TEXTURE_FORMAT format = formats[index];
+            const bool selected = ( g_CascadeConfig.m_ShadowBufferFormat == format );
+            if( ImGui::Selectable( GetShadowTextureFormatName( format ), selected ) )
+            {
+                g_CascadeConfig.m_ShadowBufferFormat = format;
+            }
+            if( selected )
+            {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    INT cascadeLevels = g_CascadeConfig.m_nCascadeLevels;
+    if( ImGui::SliderInt( "Cascade Levels", &cascadeLevels, 1, MAX_CASCADES ) )
+    {
+        g_CascadeConfig.m_nCascadeLevels = cascadeLevels;
+        NormalizeShadowSettings();
+    }
+
+    if( ImGui::BeginCombo( "Camera", GetCameraSelectionName( g_CascadedShadow.m_eSelectedCamera ) ) )
+    {
+        const INT maxCameraIndex = 1 + max( g_CascadeConfig.m_nCascadeLevels, 1 );
+        for( INT cameraIndex = EYE_CAMERA; cameraIndex <= maxCameraIndex; ++cameraIndex )
+        {
+            const CAMERA_SELECTION selection = static_cast<CAMERA_SELECTION>( cameraIndex );
+            const bool selected = ( g_CascadedShadow.m_eSelectedCamera == selection );
+            if( ImGui::Selectable( GetCameraSelectionName( selection ), selected ) )
+            {
+                g_CascadedShadow.m_eSelectedCamera = selection;
+            }
+            if( selected )
+            {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    if( ImGui::BeginCombo( "Projection Fit", GetProjectionFitName( g_CascadedShadow.m_eSelectedCascadesFit ) ) )
+    {
+        const FIT_PROJECTION_TO_CASCADES items[] = { FIT_TO_SCENE, FIT_TO_CASCADES };
+        for( INT index = 0; index < ARRAYSIZE( items ); ++index )
+        {
+            const FIT_PROJECTION_TO_CASCADES item = items[index];
+            const bool selected = ( g_CascadedShadow.m_eSelectedCascadesFit == item );
+            if( ImGui::Selectable( GetProjectionFitName( item ), selected ) )
+            {
+                g_CascadedShadow.m_eSelectedCascadesFit = item;
+            }
+            if( selected )
+            {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    if( ImGui::BeginCombo( "Near/Far Fit", GetNearFarFitName( g_CascadedShadow.m_eSelectedNearFarFit ) ) )
+    {
+        const FIT_TO_NEAR_FAR items[] =
+        {
+            FIT_NEARFAR_SCENE_AABB,
+            FIT_NEARFAR_PANCAKING,
+            FIT_NEARFAR_ZERO_ONE,
+            FIT_NEARFAR_AABB
+        };
+
+        for( INT index = 0; index < ARRAYSIZE( items ); ++index )
+        {
+            const FIT_TO_NEAR_FAR item = items[index];
+            const bool selected = ( g_CascadedShadow.m_eSelectedNearFarFit == item );
+            if( ImGui::Selectable( GetNearFarFitName( item ), selected ) )
+            {
+                g_CascadedShadow.m_eSelectedNearFarFit = item;
+                NormalizeShadowSettings();
+            }
+            if( selected )
+            {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    if( ImGui::BeginCombo( "Cascade Selection", GetCascadeSelectionName( g_CascadedShadow.m_eSelectedCascadeSelection ) ) )
+    {
+        const CASCADE_SELECTION items[] = { CASCADE_SELECTION_MAP, CASCADE_SELECTION_INTERVAL };
+        for( INT index = 0; index < ARRAYSIZE( items ); ++index )
+        {
+            const CASCADE_SELECTION item = items[index];
+            const bool selected = ( g_CascadedShadow.m_eSelectedCascadeSelection == item );
+            if( ImGui::Selectable( GetCascadeSelectionName( item ), selected ) )
+            {
+                g_CascadedShadow.m_eSelectedCascadeSelection = item;
+                NormalizeShadowSettings();
+            }
+            if( selected )
+            {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    const INT maxBufferSize = 8192 / max( g_CascadeConfig.m_nCascadeLevels, 1 );
+    if( ImGui::SliderInt( "Texture Size", &g_CascadeConfig.m_iBufferSize, 32, maxBufferSize, "%d" ) )
+    {
+        NormalizeShadowSettings();
+    }
+
+    if( ImGui::SliderInt( "PCF Blur", &g_CascadedShadow.m_iPCFBlurSize, 1, 31, "%d" ) )
+    {
+        NormalizeShadowSettings();
+    }
+
+    ImGui::SliderFloat( "Offset", &g_CascadedShadow.m_fPCFOffset, 0.0f, 0.05f, "%.3f" );
+
+    bool blurBetweenCascades = ( g_CascadedShadow.m_iBlurBetweenCascades != 0 );
+    if( ImGui::Checkbox( "Blend Between Cascades", &blurBetweenCascades ) )
+    {
+        g_CascadedShadow.m_iBlurBetweenCascades = blurBetweenCascades ? 1 : 0;
+    }
+    if( blurBetweenCascades )
+    {
+        ImGui::SliderFloat( "Cascade Blur", &g_CascadedShadow.m_fBlurBetweenCascadesAmount, 0.0f, 0.05f, "%.3f" );
+    }
+
+    bool derivativeOffset = ( g_CascadedShadow.m_iDerivativeBasedOffset != 0 );
+    if( ImGui::Checkbox( "DDX, DDY Offset", &derivativeOffset ) )
+    {
+        g_CascadedShadow.m_iDerivativeBasedOffset = derivativeOffset ? 1 : 0;
+    }
+
+    ImGui::Checkbox( "Fit Light to Texels", &g_bMoveLightTexelSize );
+
+    ImGui::Separator();
+    ImGui::Text( "Cascade Partitions" );
+    for( INT index = 0; index < g_CascadeConfig.m_nCascadeLevels; ++index )
+    {
+        char label[32] = {};
+        sprintf_s( label, "L%d", index + 1 );
+        if( ImGui::SliderInt( label, &g_CascadedShadow.m_iCascadePartitionsZeroToOne[index], 0, 100, "%d" ) )
+        {
+            NormalizeShadowSettings( index );
+        }
+    }
+}
+
+void RenderImGuiOverlay( ID3D11DeviceContext* pd3dImmediateContext, double fTime, FLOAT fElapsedTime,
+                         ID3D11RenderTargetView* pRTV, ID3D11DepthStencilView* pDSV )
+{
+    UNREFERENCED_PARAMETER( fTime );
+    UNREFERENCED_PARAMETER( fElapsedTime );
+
+    if( !g_bImGuiInitialized )
+    {
+        return;
+    }
+
+    ImGui_ImplDX11_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+
+    if( g_bShowImGuiOverlay )
+    {
+        ImGui::SetNextWindowBgAlpha( 0.88f );
+        ImGui::SetNextWindowPos( ImVec2( 18.0f, 18.0f ), ImGuiCond_FirstUseEver );
+        ImGui::SetNextWindowSize( ImVec2( 390.0f, 520.0f ), ImGuiCond_FirstUseEver );
+
+
+        RenderImGuiDebugTab();
+
+        if( ImGui::Begin( "Renderer Controls", &g_bShowImGuiOverlay ) )
+        {
+            ImGui::Text( "DX11 + Win32 backend mounted on DXUT core only" );
+            ImGui::Text( "FPS: %.1f", ImGui::GetIO().Framerate );
+            ImGui::Separator();
+
+            if( ImGui::BeginTabBar( "RendererTabs" ) )
+            {
+                if( ImGui::BeginTabItem( "Selector" ) )
+                {
+                    g_eSelectedImGuiTab = IMGUI_PANEL_TAB_SELECTOR;
+                    RenderImGuiSelectorTab();
+                    ImGui::EndTabItem();
+                }
+
+                if( ImGui::BeginTabItem( "Debug" ) )
+                {
+                    g_eSelectedImGuiTab = IMGUI_PANEL_TAB_DEBUG;
+                    
+                    ImGui::EndTabItem();
+                }
+
+                if( ImGui::BeginTabItem( "Voxelization" ) )
+                {
+                    g_eSelectedImGuiTab = IMGUI_PANEL_TAB_VOXELIZATION;
+                    RenderImGuiVoxelizationTab();
+                    ImGui::EndTabItem();
+                }
+
+                if( ImGui::BeginTabItem( "Cascades" ) )
+                {
+                    g_eSelectedImGuiTab = IMGUI_PANEL_TAB_CASCADES;
+                    RenderImGuiCascadesTab();
+                    ImGui::EndTabItem();
+                }
+
+                ImGui::EndTabBar();
+            }
+        }
+        ImGui::End();
+    }
+
+    if( g_bShowImGuiDemoWindow )
+    {
+        ImGui::ShowDemoWindow( &g_bShowImGuiDemoWindow );
+    }
+
+    if( g_bShowImGuiMetricsWindow )
+    {
+        ImGui::ShowMetricsWindow( &g_bShowImGuiMetricsWindow );
+    }
+
+    ImGui::Render();
+
+    pd3dImmediateContext->OMSetRenderTargets( 1, &pRTV, pDSV );
+    ImGui_ImplDX11_RenderDrawData( ImGui::GetDrawData() );
 }
 
 static SCENE_SELECTION GetCurrentSceneSelection()
@@ -364,10 +859,12 @@ HRESULT ApplySceneSelectionChange()
     }
 
     g_pSelectedMesh = pNewMesh;
-    V_RETURN( EnsureSceneMeshLoaded( DXUTGetD3D11Device(), g_pSelectedMesh ) );
+    ID3D11Device* pd3dDevice = DXUTGetD3D11Device();
+    V_RETURN( EnsureSceneMeshLoaded( pd3dDevice, g_pSelectedMesh ) );
     g_pActiveCamera = &g_ViewerCamera;
     ResetSceneCameras();
-    g_CascadedShadow.InvalidateStaticVoxelization();
+    V_RETURN( g_CascadedShadow.HandleSceneChanged( pd3dDevice, g_pSelectedMesh ) );
+    UpdateViewerCameraNearFar();
     return S_OK;
 }
 
@@ -487,14 +984,7 @@ void InitApp()
     g_CascadedShadow.m_iCascadePartitionsZeroToOne[7] = 100;
 
     g_CascadedShadow.m_iCascadePartitionsMax = 100;
-    g_D3DSettingsDlg.Init( &g_DialogResourceManager );
-    g_SelectorPanel.Initialize( &g_DialogResourceManager, OnGUIEvent );
-    g_DebugPanel.Initialize( &g_DialogResourceManager, OnGUIEvent );
-    g_VoxelPanel.Initialize( &g_DialogResourceManager, OnGUIEvent );
-    g_ShadowPanel.Initialize( &g_DialogResourceManager, OnGUIEvent );
-    RegisterAllGuiPanels();
-    SyncGuiPanelsFromRuntime();
-    UpdateGuiPanelVisibility();
+    NormalizeShadowSettings();
 }
 
 
@@ -532,66 +1022,23 @@ void CALLBACK OnFrameMove( double fTime, FLOAT fElapsedTime, void* pUserContext 
 
 
 //--------------------------------------------------------------------------------------
-// Render the help and statistics text
-//--------------------------------------------------------------------------------------
-void RenderText()
-{
-    UINT nBackBufferHeight = ( DXUTIsAppRenderingWithD3D9() ) ? DXUTGetD3D9BackBufferSurfaceDesc()->Height :
-            DXUTGetDXGIBackBufferSurfaceDesc()->Height;
-
-    g_pTxtHelper->Begin();
-    g_pTxtHelper->SetInsertionPos( 2, 0 );
-    g_pTxtHelper->SetForegroundColor( D3DXCOLOR( 1.0f, 1.0f, 0.0f, 1.0f ) );
-    g_pTxtHelper->DrawTextLine( DXUTGetFrameStats( DXUTIsVsyncEnabled() ) );
-    g_pTxtHelper->DrawTextLine( DXUTGetDeviceStats() );
-
-    // Draw help
-    if( g_bShowHelp )
-    {
-        g_pTxtHelper->SetInsertionPos( 2, nBackBufferHeight - 20 * 6 );
-        g_pTxtHelper->SetForegroundColor( D3DXCOLOR( 1.0f, 0.75f, 0.0f, 1.0f ) );
-        g_pTxtHelper->DrawTextLine( L"Controls:" );
-
-        g_pTxtHelper->SetInsertionPos( 20, nBackBufferHeight - 20 * 5 );
-        g_pTxtHelper->DrawTextLine( L"Move forward and backward with 'E' and 'D'\n"
-                                    L"Move left and right with 'S' and 'D' \n"
-                                    L"Click the mouse button to roate the camera\n");
-
-        g_pTxtHelper->SetInsertionPos( 350, nBackBufferHeight - 20 * 5 );
-        g_pTxtHelper->DrawTextLine( L"Hide help: F1\n"
-                                    L"Quit: ESC\n" );
-    }
-    else
-    {
-        g_pTxtHelper->SetForegroundColor( D3DXCOLOR( 1.0f, 1.0f, 1.0f, 1.0f ) );
-        g_pTxtHelper->DrawTextLine( L"Press F1 for help" );
-    }
-
-    g_pTxtHelper->End();
-}
-
-
-//--------------------------------------------------------------------------------------
 // Handle messages to the application
 //--------------------------------------------------------------------------------------
 LRESULT CALLBACK MsgProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, bool* pbNoFurtherProcessing,
                           void* pUserContext )
 {
-    // Pass messages to dialog resource manager calls so GUI state is updated correctly
-    *pbNoFurtherProcessing = g_DialogResourceManager.MsgProc( hWnd, uMsg, wParam, lParam );
-    if( *pbNoFurtherProcessing )
-        return 0;
+    UNREFERENCED_PARAMETER( pUserContext );
+    *pbNoFurtherProcessing = false;
 
-    // Pass messages to settings dialog if its active
-    if( g_D3DSettingsDlg.IsActive() )
+    if( g_bImGuiInitialized )
     {
-        g_D3DSettingsDlg.MsgProc( hWnd, uMsg, wParam, lParam );
-        return 0;
+        ImGui_ImplWin32_WndProcHandler( hWnd, uMsg, wParam, lParam );
+        if( ImGuiWantsToCaptureMessage( uMsg, wParam ) )
+        {
+            *pbNoFurtherProcessing = true;
+            return 0;
+        }
     }
-
-    *pbNoFurtherProcessing = DispatchRuntimeGuiPanelMsg( hWnd, uMsg, wParam, lParam );
-    if( *pbNoFurtherProcessing )
-        return 0;
 
     if( uMsg == WM_LBUTTONDOWN && g_CascadedShadow.IsRenderDebugAllBoundingBoxesEnabled() )
     {
@@ -632,6 +1079,27 @@ void CALLBACK OnKeyboard( UINT nChar, bool bKeyDown, bool bAltDown, void* pUserC
 
     if( bKeyDown )
     {
+        if( nChar == VK_F2 )
+        {
+            g_bShowImGuiOverlay = !g_bShowImGuiOverlay;
+            return;
+        }
+
+        if( nChar == VK_F3 )
+        {
+            g_bShowImGuiDemoWindow = !g_bShowImGuiDemoWindow;
+            return;
+        }
+
+        if( g_bImGuiInitialized )
+        {
+            const ImGuiIO& io = ImGui::GetIO();
+            if( io.WantCaptureKeyboard || io.WantTextInput )
+            {
+                return;
+            }
+        }
+
         switch( nChar )
         {
             case VK_F1:
@@ -692,23 +1160,6 @@ void CALLBACK OnKeyboard( UINT nChar, bool bKeyDown, bool bAltDown, void* pUserC
 
 
 //--------------------------------------------------------------------------------------
-// Handles the GUI events
-//--------------------------------------------------------------------------------------
-void CALLBACK OnGUIEvent( UINT nEvent, INT nControlID, CDXUTControl* pControl, void* pUserContext )
-{
-    UNREFERENCED_PARAMETER( pControl );
-    UNREFERENCED_PARAMETER( pUserContext );
-
-    if( HandleRuntimeGuiPanelEvent( nEvent, nControlID ) )
-    {
-        SyncGuiPanelsToRuntime();
-        ApplySceneSelectionChange();
-        UpdateGuiPanelVisibility();
-    }
-}
-
-
-//--------------------------------------------------------------------------------------
 // Reject any D3D11 devices that aren't acceptable by returning false
 //--------------------------------------------------------------------------------------
 bool CALLBACK IsD3D11DeviceAcceptable( const CD3D11EnumAdapterInfo* AdapterInfo, UINT Output, const CD3D11EnumDeviceInfo* DeviceInfo,
@@ -727,14 +1178,12 @@ HRESULT CreateD3DComponents( ID3D11Device* pd3dDevice )
     HRESULT hr;
     
     ID3D11DeviceContext* pd3dImmediateContext = DXUTGetD3D11DeviceContext();
-    V_RETURN( g_DialogResourceManager.OnD3D11CreateDevice( pd3dDevice, pd3dImmediateContext ) );
-    V_RETURN( g_D3DSettingsDlg.OnD3D11CreateDevice( pd3dDevice ) );
-    g_pTxtHelper = new CDXUTTextHelper( pd3dDevice, pd3dImmediateContext, &g_DialogResourceManager, 15 );
-
     ResetSceneCameras();
 
     g_CascadedShadow.Init( pd3dDevice, pd3dImmediateContext, 
         g_pSelectedMesh, &g_ViewerCamera, &g_LightCamera, &g_CascadeConfig );
+
+    V_RETURN( InitializeImGui( pd3dDevice, pd3dImmediateContext ) );
     
     return S_OK;
 }
@@ -755,10 +1204,8 @@ void CALLBACK OnD3D11DestroyDevice( void* pUserContext )
 
 HRESULT DestroyD3DComponents() 
 {
-    g_DialogResourceManager.OnD3D11DestroyDevice();
-    g_D3DSettingsDlg.OnD3D11DestroyDevice();
+    ShutdownImGui();
     DXUTGetGlobalResourceCache().OnDestroyDevice();
-    SAFE_DELETE( g_pTxtHelper );
 
     g_CascadedShadow.DestroyAndDeallocateShadowResources();
     return S_OK;
@@ -802,24 +1249,13 @@ void UpdateViewerCameraNearFar ()
 HRESULT CALLBACK OnD3D11ResizedSwapChain( ID3D11Device* pd3dDevice, IDXGISwapChain* pSwapChain,
                                           const DXGI_SURFACE_DESC* pBackBufferSurfaceDesc, void* pUserContext )
 {
-    HRESULT hr;
-
-    V_RETURN( g_DialogResourceManager.OnD3D11ResizedSwapChain( pd3dDevice, pBackBufferSurfaceDesc ) );
-    V_RETURN( g_D3DSettingsDlg.OnD3D11ResizedSwapChain( pd3dDevice, pBackBufferSurfaceDesc ) );
+    UNREFERENCED_PARAMETER( pd3dDevice );
+    UNREFERENCED_PARAMETER( pSwapChain );
+    UNREFERENCED_PARAMETER( pUserContext );
 
     g_fAspectRatio = pBackBufferSurfaceDesc->Width / ( FLOAT ) pBackBufferSurfaceDesc->Height;
 
     UpdateViewerCameraNearFar();
-        
-    g_SelectorPanel.SetLocation( 10, 10 );
-    g_SelectorPanel.SetSize( 210, 110 );
-    g_DebugPanel.SetLocation( 10, 125 );
-    g_DebugPanel.SetSize( 210, 28 );
-    g_VoxelPanel.SetLocation( 10, 125 );
-    g_VoxelPanel.SetSize( 210, 190 );
-    g_ShadowPanel.SetLocation( 10, 125 );
-    g_ShadowPanel.SetSize( 210, 245 );
-    UpdateGuiPanelVisibility();
 
     return S_OK;
 }
@@ -830,8 +1266,7 @@ HRESULT CALLBACK OnD3D11ResizedSwapChain( ID3D11Device* pd3dDevice, IDXGISwapCha
 //--------------------------------------------------------------------------------------
 void CALLBACK OnD3D11ReleasingSwapChain( void* pUserContext )
 {
-    g_DialogResourceManager.OnD3D11ReleasingSwapChain();
-
+    UNREFERENCED_PARAMETER( pUserContext );
 }
 
 
@@ -841,12 +1276,7 @@ void CALLBACK OnD3D11ReleasingSwapChain( void* pUserContext )
 void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext* pd3dImmediateContext, double fTime,
                                   FLOAT fElapsedTime, void* pUserContext )
 {
-
-    if( g_D3DSettingsDlg.IsActive() )
-    {
-        g_D3DSettingsDlg.OnRender( fElapsedTime );
-        return;
-    }
+    UNREFERENCED_PARAMETER( pUserContext );
 
     FLOAT ClearColor[4] = { 0.0f, 0.25f, 0.25f, 0.55f };
     ID3D11RenderTargetView* pRTV = DXUTGetD3D11RenderTargetView();
@@ -874,17 +1304,11 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
     g_CascadedShadow.RenderVisualizeVoxelization(pd3dImmediateContext, pRTV, pDSV, g_pSelectedMesh, &vp, g_pActiveCamera,g_bVisualizeVoxel);
     g_CascadedShadow.RenderDebug(pd3dImmediateContext, pRTV, pDSV, &vp);
 
-    SyncGuiPanelsFromRuntime();
-    UpdateGuiPanelVisibility();
-
-
     pd3dImmediateContext->RSSetViewports( 1, &vp);            
     pd3dImmediateContext->OMSetRenderTargets( 1, &pRTV, pDSV );
 
     DXUT_BeginPerfEvent( DXUT_PERFEVENTCOLOR, L"HUD / Stats" );
-
-    RenderRuntimeGuiPanels( fElapsedTime );
-    RenderText();
+    RenderImGuiOverlay( pd3dImmediateContext, fTime, fElapsedTime, pRTV, pDSV );
     DXUT_EndPerfEvent();
 }
 

@@ -70,10 +70,15 @@ public:
         D3D11_VIEWPORT* dxutViewPort,
         CFirstPersonCamera* pActiveCamera,
         bool bVisualize = false);
+    HRESULT HandleSceneChanged( ID3D11Device* pd3dDevice, ISceneMesh* pMesh );
 
     void InvalidateStaticVoxelization() { m_bStaticVoxelizationDirty = true; }
     void SetRenderDebugEnabled( bool enabled ) { m_bRenderDebug = enabled; }
     bool IsRenderDebugEnabled() const { return m_bRenderDebug; }
+    ID3D11ShaderResourceView* GetDebugShadowMapSRV() const { return m_pCascadedShadowMapSRV; }
+    INT GetDebugShadowMapAtlasWidth() const { return max( 1, m_CopyOfCascadeConfig.m_iBufferSize * max( m_CopyOfCascadeConfig.m_nCascadeLevels, 1 ) ); }
+    INT GetDebugShadowMapAtlasHeight() const { return max( 1, m_CopyOfCascadeConfig.m_iBufferSize ); }
+    INT GetDebugShadowMapCascadeCount() const { return max( 1, m_CopyOfCascadeConfig.m_nCascadeLevels ); }
     void SetRenderDebugBoundingBoxEnabled( bool enabled ) { m_bRenderDebugBoundingBox = enabled; }
     void SetRenderDebugAllBoundingBoxesEnabled(bool enabled) { m_bRenderDebugAllBoundingBoxes = enabled; }
     bool IsRenderDebugBoundingBoxEnabled() const { return m_bRenderDebugBoundingBox; }
@@ -112,6 +117,18 @@ public:
     
 
 private:
+
+    HRESULT InitializeSceneContext( ID3D11Device* pd3dDevice,
+                                    ISceneMesh* pMesh,
+                                    CFirstPersonCamera* pViewerCamera,
+                                    CFirstPersonCamera* pLightCamera,
+                                    CascadeConfig* pCascadeConfig );
+    HRESULT CreateShaders( ID3D11Device* pd3dDevice );
+    HRESULT CreateGeometryResources( ID3D11Device* pd3dDevice );
+    HRESULT CreateRenderStateResources( ID3D11Device* pd3dDevice );
+    HRESULT CreateConstantBufferResources( ID3D11Device* pd3dDevice );
+    HRESULT CreateDebugResources( ID3D11Device* pd3dDevice, const ISceneMesh* pMesh );
+    HRESULT CreateShadowMapResources( ID3D11Device* pd3dDevice );
 
     // Compute the near and far plane by intersecting an Ortho Projection with the Scenes AABB.
     void ComputeNearAndFar( FLOAT& fNearPlane, 

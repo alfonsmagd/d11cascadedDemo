@@ -8,14 +8,17 @@ cbuffer cbSelectionRing : register(b0)
 // Controls the hollow center of the ring.
 static const float kRingInnerFadeStart = 0.70f;
 static const float kRingInnerFadeEnd = 0.82f;
+
 // Controls the outer edge thickness/falloff.
 static const float kRingOuterFadeStart = 0.92f;
 static const float kRingOuterFadeEnd = 1.00f;
 static const float kRingPulseBase = 0.65f;
 static const float kRingPulseAmplitude = 0.35f;
-// Main heartbeat speed of the ring.
+
+//Main heartbeat speed of the ring.
 static const float kRingPulseSpeed = 4.5f;
-// Rotating highlight sweep around the ring.
+
+//Rotating highlight sweep around the ring.
 static const float kRingSweepAngularSpeed = 1.9f;
 static const float kRingSweepSharpness = 18.0f;
 static const float kRingDirectionEpsilon = 1.0e-4f;

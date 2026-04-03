@@ -140,7 +140,7 @@
       <FloatingPointModel>Fast</FloatingPointModel>
       <EnableEnhancedInstructionSet>StreamingSIMDExtensions2</EnableEnhancedInstructionSet>
       <ExceptionHandling>Sync</ExceptionHandling>
-      <AdditionalIncludeDirectories>DXUT\Core;DXUT\Optional;$(UserProfile)\.nuget\packages\directxmesh_desktop_win10\2024.10.29.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>DXUT\Core;DXUT\Optional;external\imgui;external\imgui\backends;$(UserProfile)\.nuget\packages\directxmesh_desktop_win10\2024.10.29.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions> %(AdditionalOptions)</AdditionalOptions>
       <PreprocessorDefinitions>WIN32;_DEBUG;DEBUG;PROFILE;_WINDOWS;D3DXFX_LARGEADDRESS_HANDLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
@@ -181,7 +181,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FloatingPointModel>Fast</FloatingPointModel>
       <ExceptionHandling>Sync</ExceptionHandling>
-      <AdditionalIncludeDirectories>DXUT\Core;DXUT\Optional;$(UserProfile)\.nuget\packages\directxmesh_desktop_win10\2024.10.29.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>DXUT\Core;DXUT\Optional;external\imgui;external\imgui\backends;$(UserProfile)\.nuget\packages\directxmesh_desktop_win10\2024.10.29.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions> %(AdditionalOptions)</AdditionalOptions>
       <PreprocessorDefinitions>WIN32;_DEBUG;DEBUG;PROFILE;_WINDOWS;D3DXFX_LARGEADDRESS_HANDLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
@@ -226,7 +226,7 @@
       <FloatingPointModel>Fast</FloatingPointModel>
       <EnableEnhancedInstructionSet>StreamingSIMDExtensions2</EnableEnhancedInstructionSet>
       <ExceptionHandling>Sync</ExceptionHandling>
-      <AdditionalIncludeDirectories>DXUT\Core;DXUT\Optional;$(UserProfile)\.nuget\packages\directxmesh_desktop_win10\2024.10.29.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>DXUT\Core;DXUT\Optional;external\imgui;external\imgui\backends;$(UserProfile)\.nuget\packages\directxmesh_desktop_win10\2024.10.29.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions> %(AdditionalOptions)</AdditionalOptions>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;D3DXFX_LARGEADDRESS_HANDLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>Use</PrecompiledHeader>
@@ -268,7 +268,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FloatingPointModel>Fast</FloatingPointModel>
       <ExceptionHandling>Sync</ExceptionHandling>
-      <AdditionalIncludeDirectories>DXUT\Core;DXUT\Optional;$(UserProfile)\.nuget\packages\directxmesh_desktop_win10\2024.10.29.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>DXUT\Core;DXUT\Optional;external\imgui;external\imgui\backends;$(UserProfile)\.nuget\packages\directxmesh_desktop_win10\2024.10.29.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions> %(AdditionalOptions)</AdditionalOptions>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;D3DXFX_LARGEADDRESS_HANDLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>Use</PrecompiledHeader>
@@ -311,7 +311,7 @@
       <FloatingPointModel>Fast</FloatingPointModel>
       <EnableEnhancedInstructionSet>StreamingSIMDExtensions2</EnableEnhancedInstructionSet>
       <ExceptionHandling>Sync</ExceptionHandling>
-      <AdditionalIncludeDirectories>DXUT\Core;DXUT\Optional;$(UserProfile)\.nuget\packages\directxmesh_desktop_win10\2024.10.29.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>DXUT\Core;DXUT\Optional;external\imgui;external\imgui\backends;$(UserProfile)\.nuget\packages\directxmesh_desktop_win10\2024.10.29.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions> %(AdditionalOptions)</AdditionalOptions>
       <PreprocessorDefinitions>WIN32;NDEBUG;PROFILE;_WINDOWS;D3DXFX_LARGEADDRESS_HANDLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>Use</PrecompiledHeader>
@@ -353,7 +353,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FloatingPointModel>Fast</FloatingPointModel>
       <ExceptionHandling>Sync</ExceptionHandling>
-      <AdditionalIncludeDirectories>DXUT\Core;DXUT\Optional;$(UserProfile)\.nuget\packages\directxmesh_desktop_win10\2024.10.29.1\include;%(AdditionalIncludeDirectories)
+      <AdditionalIncludeDirectories>DXUT\Core;DXUT\Optional;external\imgui;external\imgui\backends;$(UserProfile)\.nuget\packages\directxmesh_desktop_win10\2024.10.29.1\include;%(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
       <AdditionalOptions> %(AdditionalOptions)</AdditionalOptions>
       <PreprocessorDefinitions>WIN32;NDEBUG;PROFILE;_WINDOWS;D3DXFX_LARGEADDRESS_HANDLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -399,15 +399,11 @@
     <ClCompile Include="DXUT\Core\DXUTDevice9.cpp" />
     <ClCompile Include="DXUT\Core\DXUTmisc.cpp" />
     <ClInclude Include="DXUT\Optional\DXUTcamera.h" />
-    <ClInclude Include="DXUT\Optional\DXUTgui.h" />
     <ClInclude Include="DXUT\Optional\DXUTres.h" />
-    <ClInclude Include="DXUT\Optional\DXUTsettingsdlg.h" />
     <ClInclude Include="DXUT\Optional\SDKmesh.h" />
     <ClInclude Include="DXUT\Optional\SDKmisc.h" />
     <ClCompile Include="DXUT\Optional\DXUTcamera.cpp" />
-    <ClCompile Include="DXUT\Optional\DXUTgui.cpp" />
     <ClCompile Include="DXUT\Optional\DXUTres.cpp" />
-    <ClCompile Include="DXUT\Optional\DXUTsettingsdlg.cpp" />
     <ClCompile Include="DXUT\Optional\SDKmesh.cpp" />
     <ClCompile Include="DXUT\Optional\SDKmisc.cpp" />
     <None Include="umlGUI.mermaid" />
@@ -415,20 +411,39 @@
   <ItemGroup>
     <ClCompile Include="CascadedShadowMaps11.cpp" />
     <ClCompile Include="CascadedShadowsManager.cpp" />
-    <ClCompile Include="GuiControlBase.cpp" />
-    <ClCompile Include="GuiDebugPanel.cpp" />
-    <ClCompile Include="GuiSelectorPanel.cpp" />
-    <ClCompile Include="GuiShadowPanel.cpp" />
-    <ClCompile Include="GuiVoxelPanel.cpp" />
+    <ClCompile Include="DXUTGuiCompat.cpp" />
     <ClCompile Include="ShadowSampleMisc.cpp" />
+    <ClCompile Include="external\imgui\backends\imgui_impl_dx11.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="external\imgui\backends\imgui_impl_win32.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="external\imgui\imgui.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="external\imgui\imgui_demo.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="external\imgui\imgui_draw.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="external\imgui\imgui_tables.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="external\imgui\imgui_widgets.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="xnacollision.cpp" />
     <CLInclude Include="CascadedShadowsManager.h" />
-    <ClInclude Include="GuiControlBase.h" />
-    <ClInclude Include="GuiDebugPanel.h" />
-    <ClInclude Include="GuiRuntimeContext.h" />
-    <ClInclude Include="GuiSelectorPanel.h" />
-    <ClInclude Include="GuiShadowPanel.h" />
-    <ClInclude Include="GuiVoxelPanel.h" />
+    <ClInclude Include="external\imgui\backends\imgui_impl_dx11.h" />
+    <ClInclude Include="external\imgui\backends\imgui_impl_win32.h" />
+    <ClInclude Include="external\imgui\imconfig.h" />
+    <ClInclude Include="external\imgui\imgui.h" />
+    <ClInclude Include="external\imgui\imgui_internal.h" />
+    <ClInclude Include="external\imgui\imstb_rectpack.h" />
+    <ClInclude Include="external\imgui\imstb_textedit.h" />
+    <ClInclude Include="external\imgui\imstb_truetype.h" />
     <CLInclude Include="ShadowSampleMisc.h" />
     <ClInclude Include="VoxelizationMisc.h" />
     <CLInclude Include="WaitDlg.h" />
