@@ -413,6 +413,7 @@
     <ClCompile Include="CascadedShadowsManager.cpp" />
     <ClCompile Include="DebugRenderPass.cpp" />
     <ClCompile Include="DXUTGuiCompat.cpp" />
+    <ClCompile Include="GBufferRenderPass.cpp" />
     <ClCompile Include="ShadowSampleMisc.cpp" />
     <ClCompile Include="external\imgui\backends\imgui_impl_dx11.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
@@ -446,12 +447,17 @@
     <ClInclude Include="external\imgui\imstb_rectpack.h" />
     <ClInclude Include="external\imgui\imstb_textedit.h" />
     <ClInclude Include="external\imgui\imstb_truetype.h" />
+    <ClInclude Include="GBufferRenderPass.h" />
+    <ClInclude Include="FrameContext.h" />
     <CLInclude Include="ShadowSampleMisc.h" />
     <ClInclude Include="VoxelizationMisc.h" />
     <CLInclude Include="WaitDlg.h" />
     <CLInclude Include="xnacollision.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="GBuffer.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </None>
     <None Include="RenderCascadeScene.hlsl" />
     <None Include="RenderCascadeShadow.hlsl" />
   </ItemGroup>

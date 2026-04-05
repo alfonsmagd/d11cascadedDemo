@@ -15,6 +15,7 @@
 #include "ShadowSampleMisc.h"
 #include "SceneMesh.h"
 #include "DebugRenderPass.h"
+#include "GBufferRenderPass.h"
 #include <vector>
 
 class CFirstPersonCamera;
@@ -129,6 +130,7 @@ private:
     HRESULT CreateRenderStateResources( ID3D11Device* pd3dDevice );
     HRESULT CreateConstantBufferResources( ID3D11Device* pd3dDevice );
     HRESULT CreateDebugResources( ID3D11Device* pd3dDevice, const ISceneMesh* pMesh );
+    HRESULT CreateGBufferResources(ID3D11Device* pd3dDevice, const ISceneMesh* pMesh);
     HRESULT CreateShadowMapResources( ID3D11Device* pd3dDevice );
 
     // Compute the near and far plane by intersecting an Ortho Projection with the Scenes AABB.
@@ -259,6 +261,7 @@ private:
     ID3D11SamplerState*                 m_pSamShadowPCF = nullptr;
     ID3D11SamplerState*                 m_pSamShadowPoint = nullptr;
     DebugRenderPass                     m_DebugRenderPass;
+    GBufferRenderPass                   m_GbufferRenderPass;
 };
 
 #pragma warning(pop)

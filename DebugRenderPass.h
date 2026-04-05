@@ -17,6 +17,7 @@ public:
     virtual HRESULT Execute( ID3D11DeviceContext* pd3dDeviceContext ) = 0;
 };
 
+
 struct DebugOutput
 {
     ID3D11RenderTargetView* pRenderTargetView;

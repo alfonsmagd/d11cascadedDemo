@@ -661,6 +661,14 @@ HRESULT CascadedShadowsManager::CreateDebugResources( ID3D11Device* pd3dDevice, 
     return m_DebugRenderPass.HandleSceneChanged( pd3dDevice, const_cast<ISceneMesh*>( pMesh ) );
 }
 
+HRESULT CascadedShadowsManager::CreateGBufferResources(ID3D11Device* pd3dDevice, const ISceneMesh* pMesh)
+{
+    HRESULT hr = S_OK;
+    m_GbufferRenderPass.SetMeshView(const_cast<ISceneMesh*>(pMesh));
+    V_RETURN(m_GbufferRenderPass.Create(pd3dDevice));
+    return hr;
+}
+
 HRESULT CascadedShadowsManager::CreateShadowMapResources( ID3D11Device* pd3dDevice )
 {
     return ReleaseAndAllocateNewShadowResources( pd3dDevice );
@@ -687,6 +695,7 @@ HRESULT CascadedShadowsManager::Init(ID3D11Device* pd3dDevice,
     V_RETURN( CreateRenderStateResources( pd3dDevice ) );
     V_RETURN( CreateConstantBufferResources( pd3dDevice ) );
     V_RETURN( CreateDebugResources( pd3dDevice, pMesh ) );
+    V_RETURN(CreateGBufferResources(pd3dDevice, pMesh));
     V_RETURN( CreateShadowMapResources( pd3dDevice ) );
 
     return hr;
@@ -750,6 +759,7 @@ HRESULT CascadedShadowsManager::DestroyAndDeallocateShadowResources()
     SAFE_RELEASE(m_pgsVoxelization);
 
     m_DebugRenderPass.Destroy();
+    m_GbufferRenderPass.Destroy();
 
     for (INT iCascadeIndex = 0; iCascadeIndex < MAX_CASCADES; ++iCascadeIndex)
     {
