@@ -172,6 +172,17 @@ inline BoundingBox TransformBoundingBox(const BoundingBox& box, const D3DXMATRIX
     return transformedBox;
 }
 
+struct SelectedAlbedoInfo
+{
+    SelectedAlbedoInfo()
+        : pDiffuseSRV(NULL)
+    {
+    }
+
+    ID3D11ShaderResourceView* pDiffuseSRV;
+    std::string materialName;
+    std::string textureName;
+};
 
 class ISceneMesh
 {
@@ -193,10 +204,12 @@ public:
     virtual void UpdateGlobalBoundingBox(std::vector<BoundingBox>& globalBoundingBoxes) const = 0;
     virtual void UpdateAllBoundingBoxes(std::vector<BoundingBox>& boundingBoxes) const = 0;
     virtual bool PickSubMesh(const D3DXVECTOR3& rayOrigin, const D3DXVECTOR3& rayDirection, INT& pickedIndex, float& pickedDistance) const = 0;
+    virtual bool GetSubMeshAlbedoInfo(INT subMeshIndex, SelectedAlbedoInfo& outInfo) const = 0;
 };
 
 class SDKSceneMesh : public ISceneMesh
 {
+
 public:
     explicit SDKSceneMesh(const WCHAR* szMeshPath)
         : m_szMeshPath(szMeshPath)
@@ -204,6 +217,41 @@ public:
     {
         ResetBounds();
         ResetTransform();
+    }
+
+    bool GetSubMeshAlbedoInfo(INT subMeshIndex, SelectedAlbedoInfo& outInfo) const override
+    {
+        outInfo = SelectedAlbedoInfo();
+
+        if (subMeshIndex < 0 || subMeshIndex >= INT(m_SubMeshRuntimeData.size()))
+        {
+            return false;
+        }
+
+        CDXUTSDKMesh& meshAccess = const_cast<CDXUTSDKMesh&>(m_Mesh);
+        const SubMeshRuntimeData& runtimeData = m_SubMeshRuntimeData[subMeshIndex];
+        SDKMESH_MESH* pMesh = meshAccess.GetMesh(runtimeData.meshIndex);
+        if (!pMesh || runtimeData.subsetIndex >= pMesh->NumSubsets)
+        {
+            return false;
+        }
+
+        SDKMESH_SUBSET* pSubset = meshAccess.GetSubset(runtimeData.meshIndex, runtimeData.subsetIndex);
+        if (!pSubset)
+        {
+            return false;
+        }
+
+        SDKMESH_MATERIAL* pMaterial = meshAccess.GetMaterial(pSubset->MaterialID);
+        if (!pMaterial)
+        {
+            return false;
+        }
+
+        outInfo.pDiffuseSRV = IsErrorResource(pMaterial->pDiffuseRV11) ? NULL : pMaterial->pDiffuseRV11;
+        outInfo.materialName = pMaterial->Name;
+        outInfo.textureName = pMaterial->DiffuseTexture;
+        return outInfo.pDiffuseSRV != NULL;
     }
 
     HRESULT Create(ID3D11Device* pd3dDevice, ID3D11DeviceContext* pd3dDeviceContext) override
@@ -319,6 +367,7 @@ public:
                     m_SubMeshPickRanges.push_back(MakePickRange(firstTriangle, triangleCount));
                     SubMeshRuntimeData runtimeData = {};
                     runtimeData.meshIndex = i;
+                    runtimeData.subsetIndex = subsetIndex;
                     runtimeData.vertexIndices.swap(subsetVertexIndices);
                     m_SubMeshRuntimeData.push_back(runtimeData);
                 }
@@ -515,6 +564,7 @@ private:
     struct SubMeshRuntimeData
     {
         UINT meshIndex;
+        UINT subsetIndex;
         std::vector<UINT> vertexIndices;
     };
 
@@ -600,6 +650,30 @@ public:
     {
         ResetBounds();
         ResetTransform();
+    }
+
+    bool GetSubMeshAlbedoInfo(INT subMeshIndex, SelectedAlbedoInfo& outInfo) const override
+    {
+        outInfo = SelectedAlbedoInfo();
+
+        if (subMeshIndex < 0 || subMeshIndex >= INT(m_Subsets.size()))
+        {
+            return false;
+        }
+
+        const Subset& subset = m_Subsets[subMeshIndex];
+        if (subset.MaterialID >= m_Materials.size() || subset.MaterialID >= m_MaterialDescs.size())
+        {
+            return false;
+        }
+
+        const MaterialResources& material = m_Materials[subset.MaterialID];
+        const MaterialDesc& materialDesc = m_MaterialDescs[subset.MaterialID];
+
+        outInfo.pDiffuseSRV = material.pDiffuseSRV ? material.pDiffuseSRV : m_pFallbackDiffuseSRV;
+        outInfo.materialName = materialDesc.name;
+        outInfo.textureName = ToAnsi(materialDesc.diffuseTexture);
+        return outInfo.pDiffuseSRV != NULL;
     }
 
 
@@ -701,6 +775,7 @@ public:
 
         m_Materials.clear();
         m_Materials.resize(materials.size());
+        m_MaterialDescs = materials;
         for (size_t i = 0; i < materials.size(); ++i)
         {
             MaterialResources& outMat = m_Materials[i];
@@ -732,6 +807,7 @@ public:
         }
 
         m_Materials.clear();
+        m_MaterialDescs.clear();
         m_Subsets.clear();
         m_SubsetBoundingBoxes.clear();
         m_SubsetVertexIndices.clear();
@@ -1114,7 +1190,7 @@ private:
             return S_OK;
         }
 
-        const UINT whitePixel = 0xffffffff;
+        const UINT whitePixel = 0xff00ffff;
 
         D3D11_TEXTURE2D_DESC desc = {};
         desc.Width = 1;
@@ -1395,6 +1471,7 @@ private:
     std::vector<BoundingBox>        m_SubsetBoundingBoxes;
     std::vector<std::vector<UINT>>  m_SubsetVertexIndices;
     std::vector<MaterialResources>  m_Materials;
+    std::vector<MaterialDesc>       m_MaterialDescs;
     std::vector<MeshVertex>         m_CpuVertices;
     std::vector<UINT>               m_CpuIndices;
     D3DXVECTOR3                     m_vAABBMin;
@@ -1412,6 +1489,22 @@ public:
     {
         ResetBounds();
         ResetTransform();
+    }
+
+    bool GetSubMeshAlbedoInfo(INT subMeshIndex, SelectedAlbedoInfo& outInfo) const override
+    {
+        outInfo = SelectedAlbedoInfo();
+
+        if (subMeshIndex < 0 || subMeshIndex >= INT(m_Subsets.size()))
+        {
+            return false;
+        }
+
+        const Subset& subset = m_Subsets[subMeshIndex];
+        outInfo.pDiffuseSRV = subset.pDiffuseSRV;
+        outInfo.materialName = (subMeshIndex == 0) ? "plane" : "cube";
+        outInfo.textureName = "generated solid color";
+        return outInfo.pDiffuseSRV != NULL;
     }
 
     HRESULT Create(ID3D11Device* pd3dDevice, ID3D11DeviceContext* pd3dDeviceContext) override

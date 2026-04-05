@@ -1195,7 +1195,6 @@ VOID CDXUTDialog::SendEvent( UINT nEvent, bool bTriggeredByUser, CDXUTControl* p
     if( !bTriggeredByUser && !m_bNonUserEvents )
         return;
 
-    m_pCallbackEvent( nEvent, pControl->GetID(), pControl, m_pCallbackEventUserContext );
 }
 
 

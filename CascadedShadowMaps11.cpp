@@ -519,6 +519,27 @@ void RenderImGuiDebugTab()
                 pDrawList->AddRectFilled( labelMin, labelMax, IM_COL32( 8, 12, 18, 200 ), 4.0f );
                 pDrawList->AddText( ImVec2( labelMin.x + 7.0f, labelMin.y + 3.0f ), IM_COL32( 180, 255, 230, 255 ), cascadeLabel );
             }
+
+            //Put Draw Text debug albedo 
+            if (g_pSelectedMesh && g_CascadedShadow.GetCurrentSelectedBoundingBox() >= 0)
+            {
+                const INT selectedIndex = g_CascadedShadow.GetCurrentSelectedBoundingBox();
+                SelectedAlbedoInfo info;
+                if (g_pSelectedMesh->GetSubMeshAlbedoInfo(selectedIndex, info))
+                {
+                    ImGui::Separator();
+                    ImGui::Text("Picked Material");
+                    ImGui::Text("Material: %s", info.materialName.c_str());
+                    ImGui::TextWrapped("Texture: %s", info.textureName.c_str());
+
+                    if (info.pDiffuseSRV)
+                    {
+                        ImGui::Image(
+                            ImTextureRef((ImTextureID)(UINT_PTR)info.pDiffuseSRV),
+                            ImVec2(192.0f, 192.0f));
+                    }
+                }
+            }
         }
         else
         {

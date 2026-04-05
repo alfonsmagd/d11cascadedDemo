@@ -79,12 +79,15 @@
   <ItemGroup>
     <ClCompile Include="CascadedShadowMaps11.cpp" />
     <ClCompile Include="CascadedShadowsManager.cpp" />
+    <ClCompile Include="DebugRenderPass.cpp" />
     <ClCompile Include="DXUTGuiCompat.cpp">
       <Filter>DXUT</Filter>
     </ClCompile>
     <ClCompile Include="ShadowSampleMisc.cpp" />
     <ClCompile Include="xnacollision.cpp" />
     <CLInclude Include="CascadedShadowsManager.h" />
+    <ClInclude Include="DebugRenderPass.h" />
+    <ClInclude Include="IRenderPass.h" />
     <CLInclude Include="ShadowSampleMisc.h" />
     <CLInclude Include="WaitDlg.h" />
     <CLInclude Include="xnacollision.h" />

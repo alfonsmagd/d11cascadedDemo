@@ -411,6 +411,7 @@
   <ItemGroup>
     <ClCompile Include="CascadedShadowMaps11.cpp" />
     <ClCompile Include="CascadedShadowsManager.cpp" />
+    <ClCompile Include="DebugRenderPass.cpp" />
     <ClCompile Include="DXUTGuiCompat.cpp" />
     <ClCompile Include="ShadowSampleMisc.cpp" />
     <ClCompile Include="external\imgui\backends\imgui_impl_dx11.cpp">
@@ -436,6 +437,7 @@
     </ClCompile>
     <ClCompile Include="xnacollision.cpp" />
     <CLInclude Include="CascadedShadowsManager.h" />
+    <ClInclude Include="DebugRenderPass.h" />
     <ClInclude Include="external\imgui\backends\imgui_impl_dx11.h" />
     <ClInclude Include="external\imgui\backends\imgui_impl_win32.h" />
     <ClInclude Include="external\imgui\imconfig.h" />
@@ -454,6 +456,7 @@
     <None Include="RenderCascadeShadow.hlsl" />
   </ItemGroup>
   <ItemGroup>
+    <CLInclude Include="IRenderPass.h" />
     <CLInclude Include="resource.h" />
     <ResourceCompile Include="CascadedShadowMaps11.rc" />
   </ItemGroup>

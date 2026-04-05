@@ -25,62 +25,10 @@ static const XMVECTORF32 g_vHalfVector = { 0.5f, 0.5f, 0.5f, 0.5f };
 static const XMVECTORF32 g_vMultiplySetzwToZero = { 1.0f, 1.0f, 0.0f, 0.0f };
 static const XMVECTORF32 g_vZero = { 0.0f, 0.0f, 0.0f, 0.0f };
 
-namespace
-{
-    const XMFLOAT4 kSubMeshBoundingBoxColor = XMFLOAT4( 0.0f, 0.0f, 1.0f, 1.0f );
-    const XMFLOAT4 kSelectedBoundingBoxColor = XMFLOAT4( 0.0f, 1.0f, 0.0f, 1.0f );
-    const XMFLOAT4 kSelectionBeamColor = XMFLOAT4( 0.8f, 0.35f, 0.75f, 1.0f );
-    const XMFLOAT4 kSelectionRingColor = XMFLOAT4( 0.10f, 1.00f, 0.65f, 1.0f );
-    const float kSelectionMinObjectHeight = 0.1f;
-    const float kSelectionMinObjectRadius = 0.25f;
-    const float kSelectionOverlayBlendFactor[4] = { 0, 0, 0, 0 };
-
-    // Lifts the beam slightly off the object's floor so it doesn't fight the geometry.
-    const float kSelectionBeamVerticalOffsetFactor = 0.05f;
-    // Beam width relative to the selected object's horizontal footprint.
-    const float kSelectionBeamWidthFactor = 0.35f;
-    // How much object size influences beam height.
-    const float kSelectionBeamHeightFromObjectHeight = 2.25f;
-    const float kSelectionBeamHeightFromRadius = 1.5f;
-    const float kSelectionBeamMinHeight = 3.0f;
-    const UINT  kSelectionBeamCrossQuadCount = 2;
-    const UINT  kSelectionProceduralQuadVertexCount = 4;
-
-    // Keeps the ring slightly above the floor of the selected box to avoid z-fighting.
-    const float kSelectionRingVerticalOffsetMin = 0.02f;
-    const float kSelectionRingVerticalOffsetFactor = 0.02f;
-    // Ring size relative to the selected object's footprint.
-    const float kSelectionRingRadiusScale = 1.15f;
-    const float kSelectionRingQuadRadiusScale = 1.35f;
-
-    void RestoreBoundingBoxColors( std::vector<BoundingBox>& boundingBoxes, INT selectedIndex )
-    {
-        for( size_t index = 0; index < boundingBoxes.size(); ++index )
-        {
-            boundingBoxes[index].color = ( INT( index ) == selectedIndex ) ? kSelectedBoundingBoxColor : kSubMeshBoundingBoxColor;
-        }
-    }
-}
-
 struct VOXEL_CUBE_VERTEX
 {
     D3DXVECTOR3 Position;
     D3DXVECTOR3 Normal;
-};
-
-struct CB_SELECTION_RING
-{
-    D3DXMATRIX m_ViewProj;
-    D3DXVECTOR4 m_vRingCenterHalfSize;
-    D3DXVECTOR4 m_vRingColorTime;
-};
-
-struct CB_SELECTION_BEAM
-{
-    D3DXMATRIX m_ViewProj;
-    D3DXVECTOR4 m_vBeamCenterWidth;
-    D3DXVECTOR4 m_vBeamColorTime;
-    D3DXVECTOR4 m_vBeamParams;
 };
 
 static const VOXEL_CUBE_VERTEX g_VoxelCubeVertices[] =
@@ -151,7 +99,6 @@ CascadedShadowsManager::CascadedShadowsManager()
     m_prsShadowPancake(NULL),
     m_prsScene(NULL),
     m_prsVoxelization(NULL),
-    m_prsDebug(NULL),
     m_iPCFBlurSize(3),
     m_fPCFOffset(0.002f),
     m_iDerivativeBasedOffset(0),
@@ -280,163 +227,15 @@ HRESULT CascadedShadowsManager::EnsureRenderScenePixelShader(ID3D11Device* pd3dD
     return hr;
 }
 
-HRESULT CascadedShadowsManager::UpdateBoundingBoxBuffer( ID3D11Device* pd3dDevice, const ISceneMesh* pMesh )
-{
-    HRESULT hr = S_OK;
-    const INT preservedSelectedBoundingBox = m_iSelectedBoundingBox;
-
-    m_SceneBoundingBoxes.clear();
-    m_nBoundingBoxes = 0;
-    m_AllBoundingBoxes.clear();
-    m_nAllBoundingBoxes = 0;
-    m_iSelectedBoundingBox = -1;
-
-    if( pMesh )
-    {
-        //pMesh->UpdateGlobalBoundingBox( m_SceneBoundingBoxes );
-        pMesh->UpdateAllBoundingBoxes( m_AllBoundingBoxes );
-    }
-
-    if( preservedSelectedBoundingBox >= 0 && preservedSelectedBoundingBox < INT( m_AllBoundingBoxes.size() ) )
-    {
-        m_iSelectedBoundingBox = preservedSelectedBoundingBox;
-    }
-    RestoreBoundingBoxColors( m_AllBoundingBoxes, m_iSelectedBoundingBox );
-
-    SAFE_RELEASE( m_pBoundingBoxSRV );
-    SAFE_RELEASE( m_pBoundingBoxBuffer );
-    SAFE_RELEASE( m_pBoundingAllBoxBuffer );
-    SAFE_RELEASE( m_pBoundingAllBoxSRV );
-
-    const auto createBoundingBoxResources =
-        [&]( const std::vector<BoundingBox>& boundingBoxes,
-             ID3D11Buffer** ppBuffer,
-             ID3D11ShaderResourceView** ppSRV,
-             const char* bufferName,
-             const char* srvName ) -> HRESULT
-    {
-        if( boundingBoxes.empty() )
-        {
-            return S_OK;
-        }
-
-        D3D11_BUFFER_DESC boxBufferDesc = {};
-        boxBufferDesc.ByteWidth = UINT( sizeof( BoundingBox ) * boundingBoxes.size() );
-        boxBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-        boxBufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-        boxBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
-        boxBufferDesc.StructureByteStride = sizeof( BoundingBox );
-
-        D3D11_SUBRESOURCE_DATA boxBufferData = {};
-        boxBufferData.pSysMem = boundingBoxes.data();
-
-        HRESULT localHr = pd3dDevice->CreateBuffer( &boxBufferDesc, &boxBufferData, ppBuffer );
-        if( FAILED( localHr ) )
-        {
-            return localHr;
-        }
-        DXUT_SetDebugName( *ppBuffer, bufferName );
-
-        D3D11_SHADER_RESOURCE_VIEW_DESC boxSRVDesc = {};
-        boxSRVDesc.Format = DXGI_FORMAT_UNKNOWN;
-        boxSRVDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
-        boxSRVDesc.Buffer.FirstElement = 0;
-        boxSRVDesc.Buffer.NumElements = UINT( boundingBoxes.size() );
-
-        localHr = pd3dDevice->CreateShaderResourceView( *ppBuffer, &boxSRVDesc, ppSRV );
-        if( FAILED( localHr ) )
-        {
-            SAFE_RELEASE( *ppBuffer );
-            return localHr;
-        }
-        DXUT_SetDebugName( *ppSRV, srvName );
-
-        return S_OK;
-    };
-
-    V_RETURN( createBoundingBoxResources(
-        m_SceneBoundingBoxes,
-        &m_pBoundingBoxBuffer,
-        &m_pBoundingBoxSRV,
-        "SceneBoundingBoxBuffer",
-        "SceneBoundingBoxSRV" ) );
-
-    V_RETURN( createBoundingBoxResources(
-        m_AllBoundingBoxes,
-        &m_pBoundingAllBoxBuffer,
-        &m_pBoundingAllBoxSRV,
-        "AllBoundingBoxBuffer",
-        "AllBoundingBoxSRV" ) );
-
-    m_nBoundingBoxes = UINT( m_SceneBoundingBoxes.size() );
-    m_nAllBoundingBoxes = UINT( m_AllBoundingBoxes.size() );
-    return hr;
-}
-
 HRESULT CascadedShadowsManager::PickDebugBoundingBox( ID3D11DeviceContext* pd3dDeviceContext,
                                                       const ISceneMesh* pMesh,
                                                       INT mouseX,
                                                       INT mouseY,
                                                       const D3D11_VIEWPORT& viewport )
 {
-    if( !pd3dDeviceContext || !pMesh || m_AllBoundingBoxes.empty() || !m_pBoundingAllBoxBuffer )
-    {
-        return S_FALSE;
-    }
-
-    D3DXMATRIX dxmatProj = *m_pViewerCamera->GetProjMatrix();
-    D3DXMATRIX dxmatView = *m_pViewerCamera->GetViewMatrix();
-    if( m_eSelectedCamera == LIGHT_CAMERA )
-    {
-        dxmatProj = *m_pLightCamera->GetProjMatrix();
-        dxmatView = *m_pLightCamera->GetViewMatrix();
-    }
-    else if( m_eSelectedCamera >= ORTHO_CAMERA1 )
-    {
-        dxmatProj = m_matShadowProj[(INT)m_eSelectedCamera - 2];
-        dxmatView = m_matShadowView;
-    }
-
-    const D3DVIEWPORT9 d3dxViewport =
-    {
-        DWORD( viewport.TopLeftX ),
-        DWORD( viewport.TopLeftY ),
-        DWORD( viewport.Width ),
-        DWORD( viewport.Height ),
-        viewport.MinDepth,
-        viewport.MaxDepth
-    };
-
-    D3DXMATRIX dxmatIdentity;
-    D3DXMatrixIdentity( &dxmatIdentity );
-
-    D3DXVECTOR3 nearPoint( (FLOAT)mouseX, (FLOAT)mouseY, 0.0f );
-    D3DXVECTOR3 farPoint( (FLOAT)mouseX, (FLOAT)mouseY, 1.0f );
-    D3DXVECTOR3 worldNear;
-    D3DXVECTOR3 worldFar;
-    D3DXVec3Unproject( &worldNear, &nearPoint, &d3dxViewport, &dxmatProj, &dxmatView, &dxmatIdentity );
-    D3DXVec3Unproject( &worldFar, &farPoint, &d3dxViewport, &dxmatProj, &dxmatView, &dxmatIdentity );
-
-    D3DXVECTOR3 rayDirection = worldFar - worldNear;
-    if( D3DXVec3LengthSq( &rayDirection ) <= 0.0f )
-    {
-        return S_FALSE;
-    }
-    D3DXVec3Normalize( &rayDirection, &rayDirection );
-
-    INT pickedIndex = -1;
-    float pickedDistance = FLT_MAX;
-    pMesh->PickSubMesh( worldNear, rayDirection, pickedIndex, pickedDistance );
-
-    if( pickedIndex == m_iSelectedBoundingBox )
-    {
-        return S_OK;
-    }
-
-    m_iSelectedBoundingBox = pickedIndex;
-    RestoreBoundingBoxColors( m_AllBoundingBoxes, m_iSelectedBoundingBox );
-    pd3dDeviceContext->UpdateSubresource( m_pBoundingAllBoxBuffer, 0, NULL, m_AllBoundingBoxes.data(), 0, 0 );
-    return S_OK;
+    m_DebugRenderPass.SetMeshView( const_cast<ISceneMesh*>( pMesh ) );
+    m_DebugRenderPass.SetCameraContext( m_pViewerCamera, m_pLightCamera, m_eSelectedCamera, m_matShadowView, m_matShadowProj, MAX_CASCADES );
+    return m_DebugRenderPass.PickBoundingBox( pd3dDeviceContext, mouseX, mouseY, viewport );
 }
 
 HRESULT CascadedShadowsManager::TranslateSelectedSubMesh( ID3D11Device* pd3dDevice,
@@ -449,12 +248,13 @@ HRESULT CascadedShadowsManager::TranslateSelectedSubMesh( ID3D11Device* pd3dDevi
         return E_INVALIDARG;
     }
 
-    if( m_iSelectedBoundingBox < 0 )
+    const INT selectedBoundingBox = m_DebugRenderPass.GetSelectedBoundingBox();
+    if( selectedBoundingBox < 0 )
     {
         return S_FALSE;
     }
 
-    if( !pMesh->TranslateSubMesh( m_iSelectedBoundingBox, delta, pd3dDeviceContext ) )
+    if( !pMesh->TranslateSubMesh( selectedBoundingBox, delta, pd3dDeviceContext ) )
     {
         return S_FALSE;
     }
@@ -467,7 +267,8 @@ HRESULT CascadedShadowsManager::TranslateSelectedSubMesh( ID3D11Device* pd3dDevi
     m_vDynamicVoxelAABBMax = m_vSceneAABBMax;
     m_bStaticVoxelizationDirty = true;
 
-    return UpdateBoundingBoxBuffer( pd3dDevice, pMesh );
+    m_DebugRenderPass.SetMeshView( pMesh );
+    return m_DebugRenderPass.HandleSceneChanged( pd3dDevice, pMesh );
 }
 
 HRESULT CascadedShadowsManager::HandleSceneChanged( ID3D11Device* pd3dDevice, ISceneMesh* pMesh )
@@ -483,7 +284,6 @@ HRESULT CascadedShadowsManager::HandleSceneChanged( ID3D11Device* pd3dDevice, IS
     m_vStaticVoxelAABBMax = m_vSceneAABBMax;
     m_vDynamicVoxelAABBMin = m_vSceneAABBMin;
     m_vDynamicVoxelAABBMax = m_vSceneAABBMax;
-    m_iSelectedBoundingBox = -1;
     m_bStaticVoxelizationDirty = true;
 
     if( !pd3dDevice )
@@ -491,7 +291,8 @@ HRESULT CascadedShadowsManager::HandleSceneChanged( ID3D11Device* pd3dDevice, IS
         return S_OK;
     }
 
-    return UpdateBoundingBoxBuffer( pd3dDevice, pMesh );
+    m_DebugRenderPass.SetMeshView( pMesh );
+    return m_DebugRenderPass.HandleSceneChanged( pd3dDevice, pMesh );
 }
 
 
@@ -501,14 +302,6 @@ HRESULT CascadedShadowsManager::HandleSceneChanged( ID3D11Device* pd3dDevice, IS
 CascadedShadowsManager::~CascadedShadowsManager()
 {
     DestroyAndDeallocateShadowResources();
-    SAFE_RELEASE(m_pvsDebugBlob);
-    SAFE_RELEASE(m_ppsDebugBlob);
-    SAFE_RELEASE(m_pvsDebugBoundingBoxBlob);
-    SAFE_RELEASE(m_ppsDebugBoundingBoxBlob);
-    SAFE_RELEASE(m_pvsSelectionBeamBlob);
-    SAFE_RELEASE(m_ppsSelectionBeamBlob);
-    SAFE_RELEASE(m_pvsSelectionRingBlob);
-    SAFE_RELEASE(m_ppsSelectionRingBlob);
     SAFE_RELEASE(m_pvsVisualizeVoxelizationBlob);
     SAFE_RELEASE(m_ppsVisualizeVoxelizationBlob);
     SAFE_RELEASE(m_pvsRenderOrthoShadowBlob);
@@ -554,7 +347,8 @@ HRESULT CascadedShadowsManager::InitializeSceneContext( ID3D11Device* pd3dDevice
     m_pViewerCamera = pViewerCamera;
     m_pLightCamera = pLightCamera;
 
-    V_RETURN( UpdateBoundingBoxBuffer( pd3dDevice, pMesh ) );
+    m_DebugRenderPass.SetMeshView( pMesh );
+    V_RETURN( m_DebugRenderPass.HandleSceneChanged( pd3dDevice, pMesh ) );
     return hr;
 }
 
@@ -566,42 +360,6 @@ HRESULT CascadedShadowsManager::CreateShaders( ID3D11Device* pd3dDevice )
     {
         V_RETURN( CompileShaderFromFile(
             L"RenderCascadeShadow.hlsl", NULL, "VSMain", m_cvsModel, &m_pvsRenderOrthoShadowBlob ) );
-    }
-
-    if( m_pvsDebugBlob == NULL )
-    {
-        V_RETURN( CompileShaderFromFile( L"Debug.hlsl", NULL, "VSMain", m_cvsModel, &m_pvsDebugBlob ) );
-    }
-    if( m_ppsDebugBlob == NULL )
-    {
-        V_RETURN( CompileShaderFromFile( L"Debug.hlsl", NULL, "PSMain", m_cpsModel, &m_ppsDebugBlob ) );
-    }
-
-    if( m_pvsDebugBoundingBoxBlob == NULL )
-    {
-        V_RETURN( CompileShaderFromFile( L"DebugBoundingBox.hlsl", NULL, "VSMain", m_cvsModel, &m_pvsDebugBoundingBoxBlob ) );
-    }
-    if( m_ppsDebugBoundingBoxBlob == NULL )
-    {
-        V_RETURN( CompileShaderFromFile( L"DebugBoundingBox.hlsl", NULL, "PSMain", m_cpsModel, &m_ppsDebugBoundingBoxBlob ) );
-    }
-
-    if( m_pvsSelectionBeamBlob == NULL )
-    {
-        V_RETURN( CompileShaderFromFile( L"SelectionBeam.hlsl", NULL, "VSMain", m_cvsModel, &m_pvsSelectionBeamBlob ) );
-    }
-    if( m_ppsSelectionBeamBlob == NULL )
-    {
-        V_RETURN( CompileShaderFromFile( L"SelectionBeam.hlsl", NULL, "PSMain", m_cpsModel, &m_ppsSelectionBeamBlob ) );
-    }
-
-    if( m_pvsSelectionRingBlob == NULL )
-    {
-        V_RETURN( CompileShaderFromFile( L"SelectionRing.hlsl", NULL, "VSMain", m_cvsModel, &m_pvsSelectionRingBlob ) );
-    }
-    if( m_ppsSelectionRingBlob == NULL )
-    {
-        V_RETURN( CompileShaderFromFile( L"SelectionRing.hlsl", NULL, "PSMain", m_cpsModel, &m_ppsSelectionRingBlob ) );
     }
 
     if( m_pvsVisualizeVoxelizationBlob == NULL )
@@ -624,62 +382,6 @@ HRESULT CascadedShadowsManager::CreateShaders( ID3D11Device* pd3dDevice )
     if( m_pgsVoxelizationBlob == NULL )
     {
         V_RETURN( CompileShaderFromFile( L"Voxelization.hlsl", NULL, "CreateVoxelArrayGS", m_cgsModel, &m_pgsVoxelizationBlob ) );
-    }
-
-    if( m_pvsDebug == NULL )
-    {
-        V_RETURN( pd3dDevice->CreateVertexShader(
-            m_pvsDebugBlob->GetBufferPointer(), m_pvsDebugBlob->GetBufferSize(), NULL, &m_pvsDebug ) );
-        DXUT_SetDebugName( m_pvsDebug, "Debug_vs" );
-    }
-
-    if( m_ppsDebug == NULL )
-    {
-        V_RETURN( pd3dDevice->CreatePixelShader(
-            m_ppsDebugBlob->GetBufferPointer(), m_ppsDebugBlob->GetBufferSize(), NULL, &m_ppsDebug ) );
-        DXUT_SetDebugName( m_ppsDebug, "Debug_ps" );
-    }
-
-    if( m_pvsDebugBoundingBox == NULL )
-    {
-        V_RETURN( pd3dDevice->CreateVertexShader(
-            m_pvsDebugBoundingBoxBlob->GetBufferPointer(), m_pvsDebugBoundingBoxBlob->GetBufferSize(), NULL, &m_pvsDebugBoundingBox ) );
-        DXUT_SetDebugName( m_pvsDebugBoundingBox, "DebugBoundingBox_vs" );
-    }
-
-    if( m_ppsDebugBoundingBox == NULL )
-    {
-        V_RETURN( pd3dDevice->CreatePixelShader(
-            m_ppsDebugBoundingBoxBlob->GetBufferPointer(), m_ppsDebugBoundingBoxBlob->GetBufferSize(), NULL, &m_ppsDebugBoundingBox ) );
-        DXUT_SetDebugName( m_ppsDebugBoundingBox, "DebugBoundingBox_ps" );
-    }
-
-    if( m_pvsSelectionBeam == NULL )
-    {
-        V_RETURN( pd3dDevice->CreateVertexShader(
-            m_pvsSelectionBeamBlob->GetBufferPointer(), m_pvsSelectionBeamBlob->GetBufferSize(), NULL, &m_pvsSelectionBeam ) );
-        DXUT_SetDebugName( m_pvsSelectionBeam, "SelectionBeam_vs" );
-    }
-
-    if( m_ppsSelectionBeam == NULL )
-    {
-        V_RETURN( pd3dDevice->CreatePixelShader(
-            m_ppsSelectionBeamBlob->GetBufferPointer(), m_ppsSelectionBeamBlob->GetBufferSize(), NULL, &m_ppsSelectionBeam ) );
-        DXUT_SetDebugName( m_ppsSelectionBeam, "SelectionBeam_ps" );
-    }
-
-    if( m_pvsSelectionRing == NULL )
-    {
-        V_RETURN( pd3dDevice->CreateVertexShader(
-            m_pvsSelectionRingBlob->GetBufferPointer(), m_pvsSelectionRingBlob->GetBufferSize(), NULL, &m_pvsSelectionRing ) );
-        DXUT_SetDebugName( m_pvsSelectionRing, "SelectionRing_vs" );
-    }
-
-    if( m_ppsSelectionRing == NULL )
-    {
-        V_RETURN( pd3dDevice->CreatePixelShader(
-            m_ppsSelectionRingBlob->GetBufferPointer(), m_ppsSelectionRingBlob->GetBufferSize(), NULL, &m_ppsSelectionRing ) );
-        DXUT_SetDebugName( m_ppsSelectionRing, "SelectionRing_ps" );
     }
 
     if( m_pvsVisualizeVoxelization == NULL )
@@ -889,16 +591,6 @@ HRESULT CascadedShadowsManager::CreateRenderStateResources( ID3D11Device* pd3dDe
         DXUT_SetDebugName( m_prsVoxelization, "CSM Voxelization" );
     }
 
-    // Debug overlays are full-screen/procedural quads, so they should never depend on winding or scissor state.
-    drd.CullMode = D3D11_CULL_NONE;
-    drd.DepthClipEnable = FALSE;
-    drd.MultisampleEnable = TRUE;
-    if( m_prsDebug == NULL )
-    {
-        V_RETURN( pd3dDevice->CreateRasterizerState( &drd, &m_prsDebug ) );
-        DXUT_SetDebugName( m_prsDebug, "CSM Debug_Rasterizer" );
-    }
-
     if( m_pbsVoxelVisualize == NULL )
     {
         D3D11_BLEND_DESC blendDesc = {};
@@ -914,17 +606,6 @@ HRESULT CascadedShadowsManager::CreateRenderStateResources( ID3D11Device* pd3dDe
         blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
         V_RETURN( pd3dDevice->CreateBlendState( &blendDesc, &m_pbsVoxelVisualize ) );
         DXUT_SetDebugName( m_pbsVoxelVisualize, "VoxelVisualize_Blend" );
-    }
-
-    if( m_pdssSelectionOverlay == NULL )
-    {
-        D3D11_DEPTH_STENCIL_DESC depthStencilDesc = {};
-        depthStencilDesc.DepthEnable = TRUE;
-        depthStencilDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
-        depthStencilDesc.DepthFunc = D3D11_COMPARISON_LESS_EQUAL;
-        depthStencilDesc.StencilEnable = FALSE;
-        V_RETURN( pd3dDevice->CreateDepthStencilState( &depthStencilDesc, &m_pdssSelectionOverlay ) );
-        DXUT_SetDebugName( m_pdssSelectionOverlay, "SelectionOverlay_DSS" );
     }
 
     return hr;
@@ -975,41 +656,9 @@ HRESULT CascadedShadowsManager::CreateConstantBufferResources( ID3D11Device* pd3
 HRESULT CascadedShadowsManager::CreateDebugResources( ID3D11Device* pd3dDevice, const ISceneMesh* pMesh )
 {
     HRESULT hr = S_OK;
-
-    V_RETURN( UpdateBoundingBoxBuffer( pd3dDevice, pMesh ) );
-
-    const auto createDynamicConstantBuffer =
-        [&]( UINT byteWidth, ID3D11Buffer** ppBuffer, const char* debugName ) -> HRESULT
-    {
-        if( *ppBuffer != NULL )
-        {
-            return S_OK;
-        }
-
-        D3D11_BUFFER_DESC desc = {};
-        desc.Usage = D3D11_USAGE_DYNAMIC;
-        desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-        desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-        desc.MiscFlags = 0;
-        desc.ByteWidth = byteWidth;
-
-        HRESULT localHr = pd3dDevice->CreateBuffer( &desc, NULL, ppBuffer );
-        if( SUCCEEDED( localHr ) )
-        {
-            DXUT_SetDebugName( *ppBuffer, debugName );
-        }
-        return localHr;
-    };
-
-    V_RETURN( createDynamicConstantBuffer( sizeof( CB_SELECTION_BEAM ),
-        &m_pcbSelectionBeam,
-        "CB_SELECTION_BEAM" ) );
-
-    V_RETURN( createDynamicConstantBuffer( sizeof( CB_SELECTION_RING ),
-        &m_pcbSelectionRing,
-        "CB_SELECTION_RING" ) );
-
-    return hr;
+    m_DebugRenderPass.SetMeshView( const_cast<ISceneMesh*>( pMesh ) );
+    V_RETURN( m_DebugRenderPass.Create( pd3dDevice ) );
+    return m_DebugRenderPass.HandleSceneChanged( pd3dDevice, const_cast<ISceneMesh*>( pMesh ) );
 }
 
 HRESULT CascadedShadowsManager::CreateShadowMapResources( ID3D11Device* pd3dDevice )
@@ -1058,14 +707,6 @@ HRESULT CascadedShadowsManager::DestroyAndDeallocateShadowResources()
     SAFE_RELEASE(m_pCascadedShadowMapTexture);
     SAFE_RELEASE(m_pCascadedShadowMapDSV);
     SAFE_RELEASE(m_pCascadedShadowMapSRV);
-    SAFE_RELEASE(m_pBoundingBoxBuffer);
-    SAFE_RELEASE(m_pBoundingBoxSRV);
-    SAFE_RELEASE(m_pBoundingAllBoxBuffer);
-    SAFE_RELEASE(m_pBoundingAllBoxSRV);
-    m_SceneBoundingBoxes.clear();
-    m_nBoundingBoxes = 0;
-    m_AllBoundingBoxes.clear();
-    m_nAllBoundingBoxes = 0;
 
     SAFE_RELEASE(m_pVoxelAlbedoTex);
     SAFE_RELEASE(m_pVoxelAlbedoUAV);
@@ -1090,36 +731,25 @@ HRESULT CascadedShadowsManager::DestroyAndDeallocateShadowResources()
     SAFE_RELEASE(m_pDynamicVoxelMaskSRV);
 
     SAFE_RELEASE(m_pcbGlobalConstantBuffer);
-    SAFE_RELEASE(m_pcbSelectionBeam);
-    SAFE_RELEASE(m_pcbSelectionRing);
     SAFE_RELEASE(m_pcbVoxelParams);
     SAFE_RELEASE(m_pcbVisualizeVoxels);
 
     SAFE_RELEASE(m_prsShadow);
-    SAFE_RELEASE(m_prsDebug);
     SAFE_RELEASE(m_prsShadowPancake);
     SAFE_RELEASE(m_prsScene);
     SAFE_RELEASE(m_prsVoxelization);
     SAFE_RELEASE(m_pbsVoxelVisualize);
-    SAFE_RELEASE(m_pdssSelectionOverlay);
 
     SAFE_RELEASE(m_pvsRenderOrthoShadow);
     SAFE_RELEASE(m_pVertexLayoutVoxelVisualize);
-
-    SAFE_RELEASE(m_pvsDebug);
-    SAFE_RELEASE(m_ppsDebug);
-    SAFE_RELEASE(m_pvsDebugBoundingBox);
-    SAFE_RELEASE(m_ppsDebugBoundingBox);
-    SAFE_RELEASE(m_pvsSelectionBeam);
-    SAFE_RELEASE(m_ppsSelectionBeam);
-    SAFE_RELEASE(m_pvsSelectionRing);
-    SAFE_RELEASE(m_ppsSelectionRing);
     SAFE_RELEASE(m_pvsVisualizeVoxelization);
     SAFE_RELEASE(m_ppsVisualizeVoxelization);
 
     SAFE_RELEASE(m_pvsVoxelization);
     SAFE_RELEASE(m_ppsVoxelization);
     SAFE_RELEASE(m_pgsVoxelization);
+
+    m_DebugRenderPass.Destroy();
 
     for (INT iCascadeIndex = 0; iCascadeIndex < MAX_CASCADES; ++iCascadeIndex)
     {
@@ -1762,7 +1392,8 @@ HRESULT CascadedShadowsManager::InitFrame(ID3D11Device* pd3dDevice, ISceneMesh* 
         m_vDynamicVoxelAABBMin = m_vSceneAABBMin;
         m_vDynamicVoxelAABBMax = m_vSceneAABBMax;
         m_bStaticVoxelizationDirty = true;
-        V_RETURN( UpdateBoundingBoxBuffer( pd3dDevice, mesh ) );
+        m_DebugRenderPass.SetMeshView( mesh );
+        V_RETURN( m_DebugRenderPass.HandleSceneChanged( pd3dDevice, mesh ) );
     }
 
 
@@ -2223,272 +1854,14 @@ HRESULT CascadedShadowsManager::RenderScene(ID3D11DeviceContext* pd3dDeviceConte
 
 HRESULT CascadedShadowsManager::RenderDebug(ID3D11DeviceContext* pd3dDeviceContext, ID3D11RenderTargetView* prtvBackBuffer, ID3D11DepthStencilView* pdsvBackBuffer, D3D11_VIEWPORT* dxutViewPort)
 {
-    const bool drawSelectionRing = m_iSelectedBoundingBox >= 0 && m_iSelectedBoundingBox < INT( m_AllBoundingBoxes.size() );
-    if( !m_bRenderDebugBoundingBox && !m_bRenderDebugAllBoundingBoxes && !drawSelectionRing )
+    if( !m_bRenderDebug )
     {
         return S_OK;
     }
 
-    HRESULT hr = S_OK;
-
-    if( drawSelectionRing )
-    {
-        V_RETURN( RenderSelectionRing( pd3dDeviceContext, prtvBackBuffer, pdsvBackBuffer, dxutViewPort ) );
-    }
-
-    if( m_bRenderDebugBoundingBox || m_bRenderDebugAllBoundingBoxes )
-    {
-        V_RETURN( RenderDebugBoundingBoxes( pd3dDeviceContext, prtvBackBuffer, pdsvBackBuffer, dxutViewPort ) );
-    }
-
-    return hr;
-}
-
-HRESULT CascadedShadowsManager::RenderSelectionBeam( ID3D11DeviceContext* pd3dDeviceContext,
-    ID3D11RenderTargetView* prtvBackBuffer,
-    ID3D11DepthStencilView* pdsvBackBuffer,
-    D3D11_VIEWPORT* dxutViewPort )
-{
-    HRESULT hr = S_OK;
-
-    if( !pd3dDeviceContext || !prtvBackBuffer || !pdsvBackBuffer || !dxutViewPort ||
-        !m_pvsSelectionBeam || !m_ppsSelectionBeam || !m_pcbSelectionBeam ||
-        m_iSelectedBoundingBox < 0 || m_iSelectedBoundingBox >= INT( m_AllBoundingBoxes.size() ) )
-    {
-        return S_OK;
-    }
-
-    D3DXVECTOR3 vMin;
-    D3DXVECTOR3 vMax;
-    GetBoundingBoxMinMax( m_AllBoundingBoxes[m_iSelectedBoundingBox], vMin, vMax );
-
-    const float objectHeight = max( kSelectionMinObjectHeight, vMax.y - vMin.y );
-    const float objectRadius = max( kSelectionMinObjectRadius, max( ( vMax.x - vMin.x ) * 0.5f, ( vMax.z - vMin.z ) * 0.5f ) );
-    const D3DXVECTOR3 vCenter( ( vMin.x + vMax.x ) * 0.5f,
-        vMin.y + objectHeight * kSelectionBeamVerticalOffsetFactor,
-        ( vMin.z + vMax.z ) * 0.5f );
-    const float beamHalfWidth = objectRadius * kSelectionBeamWidthFactor;
-    const float beamHeight = max( kSelectionBeamMinHeight,
-        objectHeight * kSelectionBeamHeightFromObjectHeight + objectRadius * kSelectionBeamHeightFromRadius );
-
-    D3DXMATRIX dxmatCameraProj = *m_pViewerCamera->GetProjMatrix();
-    D3DXMATRIX dxmatCameraView = *m_pViewerCamera->GetViewMatrix();
-
-    if( m_eSelectedCamera == LIGHT_CAMERA )
-    {
-        dxmatCameraProj = *m_pLightCamera->GetProjMatrix();
-        dxmatCameraView = *m_pLightCamera->GetViewMatrix();
-    }
-    else if( m_eSelectedCamera >= ORTHO_CAMERA1 )
-    {
-        dxmatCameraProj = m_matShadowProj[(int)m_eSelectedCamera - 2];
-        dxmatCameraView = m_matShadowView;
-    }
-
-    const D3DXMATRIX dxmatViewProj = dxmatCameraView * dxmatCameraProj;
-
-    D3D11_MAPPED_SUBRESOURCE mappedResource;
-    V_RETURN( pd3dDeviceContext->Map( m_pcbSelectionBeam, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource ) );
-    CB_SELECTION_BEAM* pSelectionBeam = (CB_SELECTION_BEAM*)mappedResource.pData;
-    D3DXMatrixTranspose( &pSelectionBeam->m_ViewProj, &dxmatViewProj );
-    pSelectionBeam->m_vBeamCenterWidth = D3DXVECTOR4( vCenter.x, vCenter.y, vCenter.z, beamHalfWidth );
-    pSelectionBeam->m_vBeamColorTime = D3DXVECTOR4( kSelectionBeamColor.x, kSelectionBeamColor.y, kSelectionBeamColor.z, (FLOAT)DXUTGetTime() );
-    pSelectionBeam->m_vBeamParams = D3DXVECTOR4( beamHeight, objectRadius, objectHeight, 0.0f );
-    pd3dDeviceContext->Unmap( m_pcbSelectionBeam, 0 );
-
-    pd3dDeviceContext->RSSetState( m_prsScene );
-    pd3dDeviceContext->OMSetRenderTargets( 1, &prtvBackBuffer, pdsvBackBuffer );
-    pd3dDeviceContext->OMSetDepthStencilState( m_pdssSelectionOverlay, 0 );
-    pd3dDeviceContext->OMSetBlendState( m_pbsVoxelVisualize, kSelectionOverlayBlendFactor, 0xFFFFFFFF );
-    pd3dDeviceContext->RSSetViewports( 1, dxutViewPort );
-    pd3dDeviceContext->IASetInputLayout( NULL );
-    pd3dDeviceContext->IASetPrimitiveTopology( D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP );
-    pd3dDeviceContext->GSSetShader( NULL, NULL, 0 );
-    pd3dDeviceContext->VSSetShader( m_pvsSelectionBeam, NULL, 0 );
-    pd3dDeviceContext->PSSetShader( m_ppsSelectionBeam, NULL, 0 );
-    pd3dDeviceContext->VSSetConstantBuffers( 0, 1, &m_pcbSelectionBeam );
-    pd3dDeviceContext->PSSetConstantBuffers( 0, 1, &m_pcbSelectionBeam );
-    pd3dDeviceContext->DrawInstanced( kSelectionProceduralQuadVertexCount, kSelectionBeamCrossQuadCount, 0, 0 );
-    pd3dDeviceContext->OMSetBlendState( NULL, kSelectionOverlayBlendFactor, 0xFFFFFFFF );
-    pd3dDeviceContext->OMSetDepthStencilState( NULL, 0 );
-
-    return hr;
-}
-
-HRESULT CascadedShadowsManager::RenderSelectionRing( ID3D11DeviceContext* pd3dDeviceContext,
-    ID3D11RenderTargetView* prtvBackBuffer,
-    ID3D11DepthStencilView* pdsvBackBuffer,
-    D3D11_VIEWPORT* dxutViewPort )
-{
-    HRESULT hr = S_OK;
-
-    if( !pd3dDeviceContext || !prtvBackBuffer || !pdsvBackBuffer || !dxutViewPort ||
-        !m_pvsSelectionRing || !m_ppsSelectionRing || !m_pcbSelectionRing ||
-        m_iSelectedBoundingBox < 0 || m_iSelectedBoundingBox >= INT( m_AllBoundingBoxes.size() ) )
-    {
-        return S_OK;
-    }
-
-    D3DXVECTOR3 vMin;
-    D3DXVECTOR3 vMax;
-    GetBoundingBoxMinMax( m_AllBoundingBoxes[m_iSelectedBoundingBox], vMin, vMax );
-
-    const D3DXVECTOR3 vCenter( ( vMin.x + vMax.x ) * 0.5f,
-        vMin.y + max( kSelectionRingVerticalOffsetMin, ( vMax.y - vMin.y ) * kSelectionRingVerticalOffsetFactor ),
-        ( vMin.z + vMax.z ) * 0.5f );
-    const float radius = max( kSelectionMinObjectRadius,
-        max( ( vMax.x - vMin.x ) * 0.5f, ( vMax.z - vMin.z ) * 0.5f ) * kSelectionRingRadiusScale );
-    const float quadHalfSize = radius * kSelectionRingQuadRadiusScale;
-
-    D3DXMATRIX dxmatCameraProj = *m_pViewerCamera->GetProjMatrix();
-    D3DXMATRIX dxmatCameraView = *m_pViewerCamera->GetViewMatrix();
-
-    if( m_eSelectedCamera == LIGHT_CAMERA )
-    {
-        dxmatCameraProj = *m_pLightCamera->GetProjMatrix();
-        dxmatCameraView = *m_pLightCamera->GetViewMatrix();
-    }
-    else if( m_eSelectedCamera >= ORTHO_CAMERA1 )
-    {
-        dxmatCameraProj = m_matShadowProj[(int)m_eSelectedCamera - 2];
-        dxmatCameraView = m_matShadowView;
-    }
-
-    const D3DXMATRIX dxmatViewProj = dxmatCameraView * dxmatCameraProj;
-
-    D3D11_MAPPED_SUBRESOURCE mappedResource;
-    V_RETURN( pd3dDeviceContext->Map( m_pcbSelectionRing, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource ) );
-    CB_SELECTION_RING* pSelectionRing = (CB_SELECTION_RING*)mappedResource.pData;
-    D3DXMatrixTranspose( &pSelectionRing->m_ViewProj, &dxmatViewProj );
-    pSelectionRing->m_vRingCenterHalfSize = D3DXVECTOR4( vCenter.x, vCenter.y, vCenter.z, quadHalfSize );
-    pSelectionRing->m_vRingColorTime = D3DXVECTOR4( kSelectionRingColor.x, kSelectionRingColor.y, kSelectionRingColor.z, (FLOAT)DXUTGetTime() );
-    pd3dDeviceContext->Unmap( m_pcbSelectionRing, 0 );
-
-    pd3dDeviceContext->RSSetState( m_prsScene );
-    pd3dDeviceContext->OMSetRenderTargets( 1, &prtvBackBuffer, pdsvBackBuffer );
-    pd3dDeviceContext->OMSetBlendState( m_pbsVoxelVisualize, kSelectionOverlayBlendFactor, 0xFFFFFFFF );
-    pd3dDeviceContext->RSSetViewports( 1, dxutViewPort );
-    pd3dDeviceContext->IASetInputLayout( NULL );
-    pd3dDeviceContext->IASetPrimitiveTopology( D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP );
-    pd3dDeviceContext->GSSetShader( NULL, NULL, 0 );
-    pd3dDeviceContext->VSSetShader( m_pvsSelectionRing, NULL, 0 );
-    pd3dDeviceContext->PSSetShader( m_ppsSelectionRing, NULL, 0 );
-    pd3dDeviceContext->VSSetConstantBuffers( 0, 1, &m_pcbSelectionRing );
-    pd3dDeviceContext->PSSetConstantBuffers( 0, 1, &m_pcbSelectionRing );
-    pd3dDeviceContext->Draw( kSelectionProceduralQuadVertexCount, 0 );
-    pd3dDeviceContext->OMSetBlendState( NULL, kSelectionOverlayBlendFactor, 0xFFFFFFFF );
-
-    return S_OK;
-}
-
-HRESULT CascadedShadowsManager::RenderDebugShadowOverlay( ID3D11DeviceContext* pd3dDeviceContext,
-    ID3D11RenderTargetView* prtvBackBuffer,
-    D3D11_VIEWPORT* dxutViewPort )
-{
-    HRESULT hr = S_OK;
-
-    // 1/4 screen viewport.
-    D3D11_VIEWPORT debugVP = {};
-    debugVP.Width = dxutViewPort->Width * 0.5f;
-    debugVP.Height = dxutViewPort->Height * 0.5f;
-    debugVP.TopLeftX = 0.0f;
-    debugVP.TopLeftY = dxutViewPort->Height - debugVP.Height;
-    debugVP.MinDepth = 0.0f;
-    debugVP.MaxDepth = 1.0f;
-
-    pd3dDeviceContext->RSSetState(m_prsDebug);
-
-    // Para overlay no necesitas depth
-    pd3dDeviceContext->OMSetRenderTargets(1, &prtvBackBuffer, NULL);
-
-    pd3dDeviceContext->RSSetViewports(1, &debugVP);
-
-    // Fullscreen quad procedural con SV_VertexID
-    pd3dDeviceContext->IASetInputLayout(NULL);
-    pd3dDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-
-    pd3dDeviceContext->GSSetShader(NULL, NULL, 0);
-
-    pd3dDeviceContext->VSSetShader(m_pvsDebug, NULL, 0);
-    pd3dDeviceContext->PSSetShader(m_ppsDebug, NULL, 0);
-
-    pd3dDeviceContext->PSSetSamplers(0, 1, &m_pSamLinear);
-
-    // El debug shader lee en t0
-    pd3dDeviceContext->PSSetShaderResources(0, 1, &m_pCascadedShadowMapSRV);
-
-    // Dibujar quad
-    pd3dDeviceContext->Draw(4, 0);
-
-    // Limpiar el SRV usado por el debug shader
-    ID3D11ShaderResourceView* nullSRV[1] = { NULL };
-    pd3dDeviceContext->PSSetShaderResources(0, 1, nullSRV);
-
-    return hr;
-}
-
-HRESULT CascadedShadowsManager::RenderDebugBoundingBoxes( ID3D11DeviceContext* pd3dDeviceContext,
-    ID3D11RenderTargetView* prtvBackBuffer,
-    ID3D11DepthStencilView* pdsvBackBuffer,
-    D3D11_VIEWPORT* dxutViewPort )
-{
-    HRESULT hr = S_OK;
-
-    const bool drawSceneBoundingBox = m_bRenderDebugBoundingBox && m_pBoundingBoxSRV && m_nBoundingBoxes > 0;
-    const bool drawAllBoundingBoxes = m_bRenderDebugAllBoundingBoxes && m_pBoundingAllBoxSRV && m_nAllBoundingBoxes > 0;
-    if( ( !drawSceneBoundingBox && !drawAllBoundingBoxes ) || !m_pvsDebugBoundingBox || !m_ppsDebugBoundingBox )
-    {
-        return S_OK;
-    }
-
-    D3DXMATRIX dxmatCameraProj = *m_pViewerCamera->GetProjMatrix();
-    D3DXMATRIX dxmatCameraView = *m_pViewerCamera->GetViewMatrix();
-
-    if( m_eSelectedCamera == LIGHT_CAMERA )
-    {
-        dxmatCameraProj = *m_pLightCamera->GetProjMatrix();
-        dxmatCameraView = *m_pLightCamera->GetViewMatrix();
-    }
-    else if( m_eSelectedCamera >= ORTHO_CAMERA1 )
-    {
-        dxmatCameraProj = m_matShadowProj[(int)m_eSelectedCamera - 2];
-        dxmatCameraView = m_matShadowView;
-    }
-
-    D3DXMATRIX dxmatWorldViewProjection = dxmatCameraView * dxmatCameraProj;
-
-    D3D11_MAPPED_SUBRESOURCE mappedResource;
-    V_RETURN( pd3dDeviceContext->Map( m_pcbGlobalConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource ) );
-    CB_ALL_SHADOW_DATA* pcbAllShadowConstants = (CB_ALL_SHADOW_DATA*)mappedResource.pData;
-    D3DXMatrixTranspose( &pcbAllShadowConstants->m_WorldViewProj, &dxmatWorldViewProjection );
-    pd3dDeviceContext->Unmap( m_pcbGlobalConstantBuffer, 0 );
-
-    pd3dDeviceContext->RSSetState( m_prsScene );
-    pd3dDeviceContext->OMSetRenderTargets( 1, &prtvBackBuffer, pdsvBackBuffer );
-    pd3dDeviceContext->RSSetViewports( 1, dxutViewPort );
-    pd3dDeviceContext->IASetInputLayout( NULL );
-    pd3dDeviceContext->IASetPrimitiveTopology( D3D11_PRIMITIVE_TOPOLOGY_LINELIST );
-    pd3dDeviceContext->GSSetShader( NULL, NULL, 0 );
-    pd3dDeviceContext->VSSetShader( m_pvsDebugBoundingBox, NULL, 0 );
-    pd3dDeviceContext->PSSetShader( m_ppsDebugBoundingBox, NULL, 0 );
-    pd3dDeviceContext->VSSetConstantBuffers( 0, 1, &m_pcbGlobalConstantBuffer );
-
-    if( drawSceneBoundingBox )
-    {
-        pd3dDeviceContext->VSSetShaderResources( 0, 1, &m_pBoundingBoxSRV );
-        pd3dDeviceContext->DrawInstanced( 24, m_nBoundingBoxes, 0, 0 );
-    }
-
-    if( drawAllBoundingBoxes )
-    {
-        pd3dDeviceContext->VSSetShaderResources( 0, 1, &m_pBoundingAllBoxSRV );
-        pd3dDeviceContext->DrawInstanced( 24, m_nAllBoundingBoxes, 0, 0 );
-    }
-
-    ID3D11ShaderResourceView* nullSRV[1] = { NULL };
-    pd3dDeviceContext->VSSetShaderResources( 0, 1, nullSRV );
-
-    return hr;
+    m_DebugRenderPass.SetOutput( prtvBackBuffer, pdsvBackBuffer, dxutViewPort );
+    m_DebugRenderPass.SetCameraContext( m_pViewerCamera, m_pLightCamera, m_eSelectedCamera, m_matShadowView, m_matShadowProj, MAX_CASCADES );
+    return m_DebugRenderPass.Execute( pd3dDeviceContext );
 }
 
 HRESULT CascadedShadowsManager::RenderVoxelizationVolume(ID3D11DeviceContext* pd3dDeviceContext,
