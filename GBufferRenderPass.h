@@ -47,6 +47,7 @@ struct GBufferFrameContext : public FrameContext
 
 class GBufferRenderPass : public IRenderPass
 {
+    friend class CascadedShadowsManager;
 public:
     GBufferRenderPass();
     ~GBufferRenderPass() override;
@@ -62,6 +63,9 @@ public:
     ID3D11ShaderResourceView* GetNormalsSRV() const;
     ID3D11ShaderResourceView* GetTangentSRV() const;
     ID3D11ShaderResourceView* GetMotionVectorSRV() const;
+
+    void SetCameraContext(CFirstPersonCamera* pViewerCamera,
+        CFirstPersonCamera* pLightCamera);
 
     HRESULT static GBufferRenderPass::ReleaseGBufferResources(
         ID3D11Texture2D** pAuxGBufferTextures,
@@ -89,6 +93,7 @@ private:
     GBufferFrameContext m_FrameContext;
     ISceneMesh* m_pMeshView;
 
+    ID3D11Texture2D*        m_pGBufferTextures[GBUFFER_RTV_COUNT];
     ID3D11RenderTargetView* m_pRTVs[GBUFFER_RTV_COUNT];
     ID3D11ShaderResourceView* m_pSRVs[GBUFFER_RTV_COUNT];
 

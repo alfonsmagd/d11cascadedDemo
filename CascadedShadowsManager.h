@@ -63,6 +63,13 @@ public:
         ID3D11DepthStencilView* pdsvBackBuffer,
         D3D11_VIEWPORT* dxutViewPort);
 
+    HRESULT RenderGBuffer(ID3D11DeviceContext* pd3dDeviceContext,
+        ID3D11RenderTargetView* prtvBackBuffer,
+        ID3D11DepthStencilView* pdsvBackBuffer,
+        ISceneMesh* pMesh,
+        CFirstPersonCamera* pActiveCamera,
+        D3D11_VIEWPORT* dxutViewPort);
+
     HRESULT RenderVoxelization(ID3D11DeviceContext* pd3dDeviceContext, 
                                ISceneMesh* pMesh, CFirstPersonCamera* pActiveCamera = NULL);
     HRESULT RenderVisualizeVoxelization(ID3D11DeviceContext* pd3dDeviceContext,

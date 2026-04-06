@@ -7,6 +7,7 @@
 
 #include "DXUTcamera.h"
 #include "SDKmisc.h"
+#include "FrameContext.h"
 
 DebugRenderPass* DebugRenderPass::s_pInstance = NULL;
 
@@ -43,7 +44,7 @@ namespace
         }
     }
 
-    void ResolveCameraMatrices( const DebugFrameContext& frameContext, D3DXMATRIX& dxmatCameraView, D3DXMATRIX& dxmatCameraProj )
+    void ResolveCameraMatrices( const FrameContext& frameContext, D3DXMATRIX& dxmatCameraView, D3DXMATRIX& dxmatCameraProj )
     {
         dxmatCameraProj = *frameContext.pViewerCamera->GetProjMatrix();
         dxmatCameraView = *frameContext.pViewerCamera->GetViewMatrix();

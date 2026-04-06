@@ -3,6 +3,8 @@
 #include "GBufferRenderPass.h"
 #include "SDKmisc.h"
 
+
+
 GBufferRenderPass::GBufferRenderPass()
     : m_pMeshView( NULL )
     , m_pGeometryVS( NULL )
@@ -78,8 +80,9 @@ void GBufferRenderPass::Destroy()
 
     for( INT rtvIndex = 0; rtvIndex < GBUFFER_RTV_COUNT; ++rtvIndex )
     {
-        m_pRTVs[rtvIndex] = NULL;
-        m_pSRVs[rtvIndex] = NULL;
+        SAFE_RELEASE(m_pRTVs[rtvIndex]);
+        SAFE_RELEASE(m_pSRVs[rtvIndex]);
+        SAFE_RELEASE(m_pGBufferTextures[rtvIndex]);
     }
 }
 
@@ -172,6 +175,10 @@ ID3D11ShaderResourceView* GBufferRenderPass::GetTangentSRV() const
 ID3D11ShaderResourceView* GBufferRenderPass::GetMotionVectorSRV() const
 {
     return m_pSRVs[GBUFFER_RTV_MOTION_VECTOR];
+}
+
+void GBufferRenderPass::SetCameraContext(CFirstPersonCamera* pViewerCamera, CFirstPersonCamera* pLightCamera)
+{
 }
 
 

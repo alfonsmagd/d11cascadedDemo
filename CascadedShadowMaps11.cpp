@@ -1310,7 +1310,7 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
     g_CascadedShadow.RenderShadowsForAllCascades( pd3dDevice, pd3dImmediateContext, g_pSelectedMesh);
     
     D3D11_VIEWPORT vp;
-    vp.Width = (FLOAT)DXUTGetDXGIBackBufferSurfaceDesc()->Width;
+    vp.Width =  (FLOAT)DXUTGetDXGIBackBufferSurfaceDesc()->Width;
     vp.Height = (FLOAT)DXUTGetDXGIBackBufferSurfaceDesc()->Height;
     vp.MinDepth = 0;
     vp.MaxDepth = 1;
@@ -1321,6 +1321,7 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
     if(!g_bVisualizeVoxel)
         g_CascadedShadow.RenderScene(pd3dImmediateContext, pRTV, pDSV, g_pSelectedMesh, g_pActiveCamera, &vp, g_bVisualizeCascades);
 
+    //g_CascadedShadow.m_GbufferRenderPass.Execute(pd3dImmediateContext);
     g_CascadedShadow.RenderVoxelization(pd3dImmediateContext, g_pSelectedMesh, g_pActiveCamera);
     g_CascadedShadow.RenderVisualizeVoxelization(pd3dImmediateContext, pRTV, pDSV, g_pSelectedMesh, &vp, g_pActiveCamera,g_bVisualizeVoxel);
     g_CascadedShadow.RenderDebug(pd3dImmediateContext, pRTV, pDSV, &vp);

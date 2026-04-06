@@ -5,6 +5,7 @@
 #include "IRenderPass.h"
 #include "ShadowSampleMisc.h"
 #include "SceneMesh.h"
+#include "FrameContext.h"
 
 class CFirstPersonCamera;
 
@@ -53,27 +54,11 @@ struct DebugSharedState
     {
     }
 };
-
-struct DebugFrameContext
+struct DebugFrameContext : public FrameContext
 {
-    DebugOutput output;
-    CFirstPersonCamera* pViewerCamera;
-    CFirstPersonCamera* pLightCamera;
-    CAMERA_SELECTION selectedCamera;
-    D3DXMATRIX matShadowView;
-    D3DXMATRIX matShadowProj[MAX_CASCADES];
+    DebugFrameContext() = default;
 
-    DebugFrameContext()
-        : pViewerCamera( NULL )
-        , pLightCamera( NULL )
-        , selectedCamera( EYE_CAMERA )
-    {
-        D3DXMatrixIdentity( &matShadowView );
-        for( INT cascadeIndex = 0; cascadeIndex < MAX_CASCADES; ++cascadeIndex )
-        {
-            D3DXMatrixIdentity( &matShadowProj[cascadeIndex] );
-        }
-    }
+    DebugOutput output;
 };
 
 class DebugSelectionModule : public IDebugBase
