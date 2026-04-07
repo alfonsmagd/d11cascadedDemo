@@ -477,6 +477,77 @@ void RenderImGuiDebugTab()
     }
 
     ImGui::Separator();
+
+    ImGui::Separator();
+
+    {
+     /*   const float availableWidth = ImGui::GetContentRegionAvail().x;
+        const float previewWidth = max(180.0f, min(availableWidth * 0.48f, 360.0f));
+        const float aspect = (FLOAT)g_GBufferPass.GetGBufferHeight() / max((FLOAT)g_GBufferPass.GetGBufferWidth(), 1.0f);
+        const float previewHeight = previewWidth * aspect;*/
+
+        struct GBufferPreview
+        {
+            const char* pLabel;
+            ID3D11ShaderResourceView* pSRV;
+        };
+
+        GBufferPreview previews[] =
+        {
+            { "Normal",        g_CascadedShadow.m_GbufferRenderPass.GetPositionSRV()},
+            { "Position",         g_CascadedShadow.m_GbufferRenderPass.GetNormalsSRV() },
+            { "Tangent",       g_CascadedShadow.m_GbufferRenderPass.GetTangentSRV() },
+           
+            { "Motion Vector",  g_CascadedShadow.m_GbufferRenderPass.GetMotionVectorSRV() }
+        };
+
+        ImGui::Text("GBuffer Debug");
+        //ImGui::TextDisabled("%dx%d", g_GBufferPass.GetGBufferWidth(), g_GBufferPass.GetGBufferHeight());
+        ImGui::Separator();
+
+        for (INT textureIndex = 0; textureIndex < _countof(previews); ++textureIndex)
+        {
+            if (previews[textureIndex].pSRV == NULL)
+            {
+                continue;
+            }
+
+            ImGui::BeginGroup();
+            ImGui::Text("%s", previews[textureIndex].pLabel);
+
+            ImGui::Image(
+                ImTextureRef((ImTextureID)(UINT_PTR)previews[textureIndex].pSRV),
+                ImVec2(128, 128));
+
+            ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+            const ImVec2 imageMin = ImGui::GetItemRectMin();
+            const ImVec2 imageMax = ImGui::GetItemRectMax();
+            pDrawList->AddRect(imageMin, imageMax, IM_COL32(255, 255, 255, 100), 4.0f, 0, 1.0f);
+
+            ImGui::EndGroup();
+
+            if ((textureIndex & 1) == 0)
+            {
+                ImGui::SameLine();
+            }
+        }
+
+        ImGui::Separator();
+        ImGui::TextWrapped("This panel shows the current GBuffer textures used by the geometry pass.");
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
     if( renderDebug )
     {
         ID3D11ShaderResourceView* pShadowAtlasSRV = g_CascadedShadow.GetDebugShadowMapSRV();
@@ -1321,7 +1392,7 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
     if(!g_bVisualizeVoxel)
         g_CascadedShadow.RenderScene(pd3dImmediateContext, pRTV, pDSV, g_pSelectedMesh, g_pActiveCamera, &vp, g_bVisualizeCascades);
 
-    //g_CascadedShadow.m_GbufferRenderPass.Execute(pd3dImmediateContext);
+    g_CascadedShadow.RenderGBuffer(pd3dImmediateContext,pRTV,pDSV,&vp);
     g_CascadedShadow.RenderVoxelization(pd3dImmediateContext, g_pSelectedMesh, g_pActiveCamera);
     g_CascadedShadow.RenderVisualizeVoxelization(pd3dImmediateContext, pRTV, pDSV, g_pSelectedMesh, &vp, g_pActiveCamera,g_bVisualizeVoxel);
     g_CascadedShadow.RenderDebug(pd3dImmediateContext, pRTV, pDSV, &vp);

@@ -57,7 +57,7 @@ public:
     void Destroy() override;
     HRESULT Execute( ID3D11DeviceContext* pd3dDeviceContext ) override;
 
-    void SetOutput( const GBufferOutput& output );
+    void SetOutput(ID3D11RenderTargetView* prtvBackBuffer, ID3D11DepthStencilView* pdsvBackBuffer, D3D11_VIEWPORT* pViewport);
     void SetMeshView( ISceneMesh* pMesh );
     ID3D11ShaderResourceView* GetPositionSRV() const;
     ID3D11ShaderResourceView* GetNormalsSRV() const;
@@ -65,8 +65,11 @@ public:
     ID3D11ShaderResourceView* GetMotionVectorSRV() const;
 
     void SetCameraContext(CFirstPersonCamera* pViewerCamera,
-        CFirstPersonCamera* pLightCamera);
+                          CFirstPersonCamera* pLightCamera, 
+                          CAMERA_SELECTION selectedCamera);
 
+    void SetGlobalConstantBuffer(ID3D11Buffer* pGlobalConstantBuffer) { m_pGlobalConstantBuffer = pGlobalConstantBuffer; }
+    void SetInputVertexLayout(ID3D11InputLayout* pInputLayout) { m_pInputLayout = pInputLayout; }
     HRESULT static GBufferRenderPass::ReleaseGBufferResources(
         ID3D11Texture2D** pAuxGBufferTextures,
         ID3D11RenderTargetView** pAuxGBufferRTVs,
@@ -106,4 +109,8 @@ private:
     ID3D11PixelShader* m_pMotionVectorPS;
     ID3DBlob* m_pMotionVectorVSBlob;
     ID3DBlob* m_pMotionVectorPSBlob;
+
+    ID3D11RasterizerState* m_pRasterizerState;
+    ID3D11Buffer* m_pGlobalConstantBuffer;
+    ID3D11InputLayout* m_pInputLayout;
 };

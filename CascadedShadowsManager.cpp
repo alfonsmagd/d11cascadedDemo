@@ -1886,8 +1886,12 @@ HRESULT CascadedShadowsManager::RenderDebug(ID3D11DeviceContext* pd3dDeviceConte
     return m_DebugRenderPass.Execute(pd3dDeviceContext);
 }
 
-HRESULT CascadedShadowsManager::RenderGBuffer(ID3D11DeviceContext* pd3dDeviceContext, ID3D11RenderTargetView* prtvBackBuffer, ID3D11DepthStencilView* pdsvBackBuffer, ISceneMesh* pMesh, CFirstPersonCamera* pActiveCamera, D3D11_VIEWPORT* dxutViewPort)
+HRESULT CascadedShadowsManager::RenderGBuffer(ID3D11DeviceContext* pd3dDeviceContext, ID3D11RenderTargetView* prtvBackBuffer, ID3D11DepthStencilView* pdsvBackBuffer, D3D11_VIEWPORT* dxutViewPort)
 {
+    m_GbufferRenderPass.SetCameraContext(m_pViewerCamera, m_pLightCamera, m_eSelectedCamera);
+    m_GbufferRenderPass.SetGlobalConstantBuffer(m_pcbGlobalConstantBuffer);
+    m_GbufferRenderPass.SetInputVertexLayout(m_pVertexLayoutMesh);
+    m_GbufferRenderPass.SetOutput(prtvBackBuffer, pdsvBackBuffer, dxutViewPort);
     m_GbufferRenderPass.Execute(pd3dDeviceContext);
     return S_OK;
 }

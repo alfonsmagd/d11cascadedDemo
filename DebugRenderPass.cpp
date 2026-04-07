@@ -8,7 +8,6 @@
 #include "DXUTcamera.h"
 #include "SDKmisc.h"
 #include "FrameContext.h"
-
 DebugRenderPass* DebugRenderPass::s_pInstance = NULL;
 
 namespace

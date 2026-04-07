@@ -66,8 +66,6 @@ public:
     HRESULT RenderGBuffer(ID3D11DeviceContext* pd3dDeviceContext,
         ID3D11RenderTargetView* prtvBackBuffer,
         ID3D11DepthStencilView* pdsvBackBuffer,
-        ISceneMesh* pMesh,
-        CFirstPersonCamera* pActiveCamera,
         D3D11_VIEWPORT* dxutViewPort);
 
     HRESULT RenderVoxelization(ID3D11DeviceContext* pd3dDeviceContext, 
@@ -123,7 +121,7 @@ public:
     FIT_PROJECTION_TO_CASCADES          m_eSelectedCascadesFit;
     FIT_TO_NEAR_FAR                     m_eSelectedNearFarFit;
     CASCADE_SELECTION                   m_eSelectedCascadeSelection;
-    
+    GBufferRenderPass                   m_GbufferRenderPass;
 
 private:
 
@@ -268,7 +266,7 @@ private:
     ID3D11SamplerState*                 m_pSamShadowPCF = nullptr;
     ID3D11SamplerState*                 m_pSamShadowPoint = nullptr;
     DebugRenderPass                     m_DebugRenderPass;
-    GBufferRenderPass                   m_GbufferRenderPass;
+    
 };
 
 #pragma warning(pop)
