@@ -16,9 +16,13 @@ GBufferRenderPass::GBufferRenderPass()
     , m_pMotionVectorPS(NULL)
     , m_pMotionVectorVSBlob(NULL)
     , m_pMotionVectorPSBlob(NULL)
+    , m_pRasterizerState(NULL)
+    , m_pGlobalConstantBuffer(NULL)
+    , m_pInputLayout(NULL)
 {
     for (INT rtvIndex = 0; rtvIndex < GBUFFER_RTV_COUNT; ++rtvIndex)
     {
+        m_pGBufferTextures[rtvIndex] = NULL;
         m_pRTVs[rtvIndex] = NULL;
         m_pSRVs[rtvIndex] = NULL;
     }
@@ -96,13 +100,74 @@ void GBufferRenderPass::Destroy()
     SAFE_RELEASE(m_pGeometryPS);
     SAFE_RELEASE(m_pGeometryVS);
     SAFE_RELEASE(m_pRasterizerState);
+    m_pGlobalConstantBuffer = NULL;
+    m_pInputLayout = NULL;
 
-    for (INT rtvIndex = 0; rtvIndex < GBUFFER_RTV_COUNT; ++rtvIndex)
+    ReleaseOwnedTargets();
+}
+
+void GBufferRenderPass::ReleaseOwnedTargets()
+{
+    for( INT rtvIndex = 0; rtvIndex < GBUFFER_RTV_COUNT; ++rtvIndex )
     {
-        SAFE_RELEASE(m_pRTVs[rtvIndex]);
-        SAFE_RELEASE(m_pSRVs[rtvIndex]);
-        SAFE_RELEASE(m_pGBufferTextures[rtvIndex]);
+        SAFE_RELEASE( m_pSRVs[rtvIndex] );
+        SAFE_RELEASE( m_pRTVs[rtvIndex] );
+        SAFE_RELEASE( m_pGBufferTextures[rtvIndex] );
     }
+}
+
+HRESULT GBufferRenderPass::Resize( ID3D11Device* pd3dDevice, UINT width, UINT height )
+{
+    if( !pd3dDevice || width == 0 || height == 0 )
+    {
+        return E_INVALIDARG;
+    }
+
+    ReleaseOwnedTargets();
+
+    const DXGI_FORMAT formats[GBUFFER_RTV_COUNT] =
+    {
+        DXGI_FORMAT_R16G16B16A16_FLOAT,
+        DXGI_FORMAT_R16G16B16A16_FLOAT,
+        DXGI_FORMAT_R16G16B16A16_FLOAT,
+        DXGI_FORMAT_R16G16B16A16_FLOAT
+    };
+
+    for( INT index = 0; index < GBUFFER_RTV_COUNT; ++index )
+    {
+        D3D11_TEXTURE2D_DESC texDesc = {};
+        texDesc.Width = width;
+        texDesc.Height = height;
+        texDesc.MipLevels = 1;
+        texDesc.ArraySize = 1;
+        texDesc.Format = formats[index];
+        texDesc.SampleDesc.Count = 1;
+        texDesc.Usage = D3D11_USAGE_DEFAULT;
+        texDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+
+        HRESULT hr = pd3dDevice->CreateTexture2D( &texDesc, NULL, &m_pGBufferTextures[index] );
+        if( FAILED( hr ) )
+        {
+            ReleaseOwnedTargets();
+            return hr;
+        }
+
+        hr = pd3dDevice->CreateRenderTargetView( m_pGBufferTextures[index], NULL, &m_pRTVs[index] );
+        if( FAILED( hr ) )
+        {
+            ReleaseOwnedTargets();
+            return hr;
+        }
+
+        hr = pd3dDevice->CreateShaderResourceView( m_pGBufferTextures[index], NULL, &m_pSRVs[index] );
+        if( FAILED( hr ) )
+        {
+            ReleaseOwnedTargets();
+            return hr;
+        }
+    }
+
+    return S_OK;
 }
 
 HRESULT GBufferRenderPass::Execute(ID3D11DeviceContext* pd3dDeviceContext)
@@ -113,7 +178,7 @@ HRESULT GBufferRenderPass::Execute(ID3D11DeviceContext* pd3dDeviceContext)
         return E_INVALIDARG;
     }
 
-    if (m_FrameContext.output.pDepthStencilView == NULL || m_FrameContext.output.pViewport == NULL)
+    if( m_FrameContext.output.pDepthStencilView == NULL || m_FrameContext.output.pViewport == NULL )
     {
         return S_FALSE;
     }
@@ -131,7 +196,7 @@ HRESULT GBufferRenderPass::Execute(ID3D11DeviceContext* pd3dDeviceContext)
         return S_FALSE;
     }
 
-    if (m_pGeometryVS == NULL || m_pGeometryPS == NULL)
+    if( m_pGeometryVS == NULL || m_pGeometryPS == NULL || m_pGlobalConstantBuffer == NULL || m_pInputLayout == NULL || m_FrameContext.pViewerCamera == NULL )
     {
         return S_FALSE;
     }
@@ -157,7 +222,7 @@ HRESULT GBufferRenderPass::Execute(ID3D11DeviceContext* pd3dDeviceContext)
     D3DXMATRIX dxmatWorldViewProjection = dxmatWorldView * dxmatCameraProj;
 
     D3D11_MAPPED_SUBRESOURCE MappedResource;
-    V(pd3dDeviceContext->Map(m_pGlobalConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
+    V_RETURN( pd3dDeviceContext->Map( m_pGlobalConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource ) );
     CB_ALL_SHADOW_DATA* pcbAllShadowConstants = (CB_ALL_SHADOW_DATA*)MappedResource.pData;
     D3DXMatrixTranspose(&pcbAllShadowConstants->m_WorldViewProj, &dxmatWorldViewProjection);
     D3DXMatrixTranspose(&pcbAllShadowConstants->m_WorldView, &dxmatWorldView);
@@ -173,7 +238,6 @@ HRESULT GBufferRenderPass::Execute(ID3D11DeviceContext* pd3dDeviceContext)
     {
         pd3dDeviceContext->ClearRenderTargetView(m_pRTVs[i], clearColor);
     }
-
     pd3dDeviceContext->ClearDepthStencilView(
         m_FrameContext.output.pDepthStencilView,
         D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL,
@@ -186,11 +250,12 @@ HRESULT GBufferRenderPass::Execute(ID3D11DeviceContext* pd3dDeviceContext)
 
     pd3dDeviceContext->RSSetViewports(1, m_FrameContext.output.pViewport);
 
-    pd3dDeviceContext->IASetInputLayout(m_pInputLayout);
+    pd3dDeviceContext->IASetInputLayout( m_pInputLayout );
 
     pd3dDeviceContext->VSSetShader(m_pGeometryVS, NULL, 0);
     pd3dDeviceContext->PSSetShader(m_pGeometryPS, NULL, 0);
-    pd3dDeviceContext->PSSetConstantBuffers(0, 1, &m_pGlobalConstantBuffer);
+    pd3dDeviceContext->VSSetConstantBuffers( 0, 1, &m_pGlobalConstantBuffer );
+    pd3dDeviceContext->PSSetConstantBuffers( 0, 1, &m_pGlobalConstantBuffer );
 
     m_pMeshView->Render(pd3dDeviceContext);
 
@@ -225,6 +290,7 @@ HRESULT GBufferRenderPass::Execute(ID3D11DeviceContext* pd3dDeviceContext)
 
 void GBufferRenderPass::SetOutput(ID3D11RenderTargetView* prtvBackBuffer, ID3D11DepthStencilView* pdsvBackBuffer, D3D11_VIEWPORT* pViewport)
 {
+    UNREFERENCED_PARAMETER( prtvBackBuffer );
     m_FrameContext.output.pDepthStencilView = pdsvBackBuffer;
     m_FrameContext.output.pViewport = pViewport;
 }
@@ -259,96 +325,4 @@ void GBufferRenderPass::SetCameraContext(CFirstPersonCamera* pViewerCamera, CFir
     m_FrameContext.pViewerCamera = pViewerCamera;
     m_FrameContext.pLightCamera = pLightCamera;
     m_FrameContext.selectedCamera = selectedCamera;
-}
-
-
-
-HRESULT  GBufferRenderPass::ReleaseGBufferResources(
-    ID3D11Texture2D** pAuxGBufferTextures,
-    ID3D11RenderTargetView** pAuxGBufferRTVs,
-    ID3D11ShaderResourceView** pAuxGBufferSRVs)
-{
-    for (INT index = 0; index < MAX_GBUFFER_RTV; ++index)
-    {
-        if (pAuxGBufferSRVs[index])
-        {
-            pAuxGBufferSRVs[index]->Release();
-            pAuxGBufferSRVs[index] = nullptr;
-        }
-
-        if (pAuxGBufferRTVs[index])
-        {
-            pAuxGBufferRTVs[index]->Release();
-            pAuxGBufferRTVs[index] = nullptr;
-        }
-
-        if (pAuxGBufferTextures[index])
-        {
-            pAuxGBufferTextures[index]->Release();
-            pAuxGBufferTextures[index] = nullptr;
-        }
-    }
-
-    return S_OK;
-}
-
-HRESULT GBufferRenderPass::CreateGBufferResources(
-    ID3D11Device* pd3dDevice,
-    UINT width,
-    UINT height,
-    ID3D11Texture2D** pAuxGBufferTextures,
-    ID3D11RenderTargetView** pAuxGBufferRTVs,
-    ID3D11ShaderResourceView** pAuxGBufferSRVs)
-{
-    if (!pd3dDevice || width == 0 || height == 0 ||
-        !pAuxGBufferTextures || !pAuxGBufferRTVs || !pAuxGBufferSRVs)
-    {
-        return E_INVALIDARG;
-    }
-
-    ReleaseGBufferResources(pAuxGBufferTextures, pAuxGBufferRTVs, pAuxGBufferSRVs);
-
-    const DXGI_FORMAT formats[4] =
-    {
-        DXGI_FORMAT_R16G16B16A16_FLOAT,
-        DXGI_FORMAT_R16G16B16A16_FLOAT,
-        DXGI_FORMAT_R16G16B16A16_FLOAT,
-        DXGI_FORMAT_R16G16B16A16_FLOAT
-    };
-
-    for (INT index = 0; index < MAX_GBUFFER_RTV; ++index)
-    {
-        D3D11_TEXTURE2D_DESC texDesc = {};
-        texDesc.Width = width;
-        texDesc.Height = height;
-        texDesc.MipLevels = 1;
-        texDesc.ArraySize = 1;
-        texDesc.Format = formats[index];
-        texDesc.SampleDesc.Count = 1;
-        texDesc.Usage = D3D11_USAGE_DEFAULT;
-        texDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-
-        HRESULT hr = pd3dDevice->CreateTexture2D(&texDesc, nullptr, &pAuxGBufferTextures[index]);
-        if (FAILED(hr))
-        {
-            ReleaseGBufferResources(pAuxGBufferTextures, pAuxGBufferRTVs, pAuxGBufferSRVs);
-            return hr;
-        }
-
-        hr = pd3dDevice->CreateRenderTargetView(pAuxGBufferTextures[index], nullptr, &pAuxGBufferRTVs[index]);
-        if (FAILED(hr))
-        {
-            ReleaseGBufferResources(pAuxGBufferTextures, pAuxGBufferRTVs, pAuxGBufferSRVs);
-            return hr;
-        }
-
-        hr = pd3dDevice->CreateShaderResourceView(pAuxGBufferTextures[index], nullptr, &pAuxGBufferSRVs[index]);
-        if (FAILED(hr))
-        {
-            ReleaseGBufferResources(pAuxGBufferTextures, pAuxGBufferRTVs, pAuxGBufferSRVs);
-            return hr;
-        }
-    }
-
-    return S_OK;
 }

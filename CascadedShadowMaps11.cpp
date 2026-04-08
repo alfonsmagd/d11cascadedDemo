@@ -19,6 +19,9 @@
 #include <commdlg.h>
 #include <vector>
 #include "WaitDlg.h"
+#include <cmath>
+#include <cstring>
+#include <random>
 
 #pragma comment(lib, "legacy_stdio_definitions.lib")
 
@@ -56,6 +59,28 @@ bool                        g_bImGuiInitialized = false;
 bool                        g_bShowImGuiOverlay = true;
 bool                        g_bShowImGuiDemoWindow = false;
 bool                        g_bShowImGuiMetricsWindow = false;
+bool                        g_bShowPackUnpackTestPanel = true;
+
+struct PACK_UNPACK_GPU_TEST_RESULT
+{
+    bool valid = false;
+    bool pass = false;
+    UINT packedX = 0;
+    UINT packedY = 0;
+    D3DXVECTOR4 input = D3DXVECTOR4( 0, 0, 0, 0 );
+    D3DXVECTOR4 unpacked = D3DXVECTOR4( 0, 0, 0, 0 );
+} g_PackUnpackGpuTestResult;
+
+ID3D11ComputeShader*        g_pPackUnpackComputeShader = NULL;
+ID3DBlob*                   g_pPackUnpackComputeShaderBlob = NULL;
+ID3D11Buffer*               g_pPackUnpackInputCB = NULL;
+ID3D11Texture2D*            g_pPackUnpackPackedTexRG32 = NULL;
+ID3D11UnorderedAccessView*  g_pPackUnpackPackedTexRG32UAV = NULL;
+ID3D11Texture2D*            g_pPackUnpackPackedTexRG32Readback = NULL;
+ID3D11Texture2D*            g_pPackUnpackUnpackedTexRGBA32 = NULL;
+ID3D11UnorderedAccessView*  g_pPackUnpackUnpackedTexRGBA32UAV = NULL;
+ID3D11Texture2D*            g_pPackUnpackUnpackedTexRGBA32Readback = NULL;
+bool                        g_bShowGBufferPreview = true;
 
 enum IMGUI_PANEL_TAB
 {
@@ -109,6 +134,9 @@ void RenderImGuiSelectorTab();
 void RenderImGuiDebugTab();
 void RenderImGuiVoxelizationTab();
 void RenderImGuiCascadesTab();
+HRESULT CreatePackUnpackGpuTestResources( ID3D11Device* pd3dDevice );
+void ReleasePackUnpackGpuTestResources();
+HRESULT RunPackUnpackGpuTest( ID3D11DeviceContext* pd3dImmediateContext );
 
 const char* GetSceneSelectionName( SCENE_SELECTION sceneSelection )
 {
@@ -389,6 +417,162 @@ bool ImGuiWantsToCaptureMessage( UINT uMsg, WPARAM wParam )
     }
 }
 
+struct CB_PACK_UNPACK_GPU_TEST
+{
+    D3DXVECTOR4 vInput;
+};
+
+HRESULT CreatePackUnpackGpuTestResources( ID3D11Device* pd3dDevice )
+{
+    HRESULT hr = S_OK;
+    if( !pd3dDevice )
+    {
+        return E_INVALIDARG;
+    }
+
+    ReleasePackUnpackGpuTestResources();
+
+    WCHAR shaderFile[] = L"PackUnpackRG32.hlsl";
+    V_RETURN( CompileShaderFromFile( shaderFile, NULL, "CSMain", "cs_5_0", &g_pPackUnpackComputeShaderBlob ) );
+    V_RETURN( pd3dDevice->CreateComputeShader(
+        g_pPackUnpackComputeShaderBlob->GetBufferPointer(),
+        g_pPackUnpackComputeShaderBlob->GetBufferSize(),
+        NULL,
+        &g_pPackUnpackComputeShader ) );
+
+    D3D11_BUFFER_DESC cbDesc = {};
+    cbDesc.ByteWidth = sizeof( CB_PACK_UNPACK_GPU_TEST );
+    cbDesc.Usage = D3D11_USAGE_DYNAMIC;
+    cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    V_RETURN( pd3dDevice->CreateBuffer( &cbDesc, NULL, &g_pPackUnpackInputCB ) );
+
+    D3D11_TEXTURE2D_DESC packedTexDesc = {};
+    packedTexDesc.Width = 1;
+    packedTexDesc.Height = 1;
+    packedTexDesc.MipLevels = 1;
+    packedTexDesc.ArraySize = 1;
+    packedTexDesc.Format = DXGI_FORMAT_R32G32_FLOAT;
+    packedTexDesc.SampleDesc.Count = 1;
+    packedTexDesc.Usage = D3D11_USAGE_DEFAULT;
+    packedTexDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
+    V_RETURN( pd3dDevice->CreateTexture2D( &packedTexDesc, NULL, &g_pPackUnpackPackedTexRG32 ) );
+
+    D3D11_UNORDERED_ACCESS_VIEW_DESC packedUavDesc = {};
+    packedUavDesc.Format = DXGI_FORMAT_R32G32_FLOAT;
+    packedUavDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+    packedUavDesc.Texture2D.MipSlice = 0;
+    V_RETURN( pd3dDevice->CreateUnorderedAccessView( g_pPackUnpackPackedTexRG32, &packedUavDesc, &g_pPackUnpackPackedTexRG32UAV ) );
+
+    packedTexDesc.Usage = D3D11_USAGE_STAGING;
+    packedTexDesc.BindFlags = 0;
+    packedTexDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    V_RETURN( pd3dDevice->CreateTexture2D( &packedTexDesc, NULL, &g_pPackUnpackPackedTexRG32Readback ) );
+
+    D3D11_TEXTURE2D_DESC unpackedTexDesc = {};
+    unpackedTexDesc.Width = 1;
+    unpackedTexDesc.Height = 1;
+    unpackedTexDesc.MipLevels = 1;
+    unpackedTexDesc.ArraySize = 1;
+    unpackedTexDesc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+    unpackedTexDesc.SampleDesc.Count = 1;
+    unpackedTexDesc.Usage = D3D11_USAGE_DEFAULT;
+    unpackedTexDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
+    V_RETURN( pd3dDevice->CreateTexture2D( &unpackedTexDesc, NULL, &g_pPackUnpackUnpackedTexRGBA32 ) );
+
+    D3D11_UNORDERED_ACCESS_VIEW_DESC unpackedUavDesc = {};
+    unpackedUavDesc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+    unpackedUavDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+    unpackedUavDesc.Texture2D.MipSlice = 0;
+    V_RETURN( pd3dDevice->CreateUnorderedAccessView( g_pPackUnpackUnpackedTexRGBA32, &unpackedUavDesc, &g_pPackUnpackUnpackedTexRGBA32UAV ) );
+
+    unpackedTexDesc.Usage = D3D11_USAGE_STAGING;
+    unpackedTexDesc.BindFlags = 0;
+    unpackedTexDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    V_RETURN( pd3dDevice->CreateTexture2D( &unpackedTexDesc, NULL, &g_pPackUnpackUnpackedTexRGBA32Readback ) );
+
+    return hr;
+}
+
+void ReleasePackUnpackGpuTestResources()
+{
+    SAFE_RELEASE( g_pPackUnpackUnpackedTexRGBA32Readback );
+    SAFE_RELEASE( g_pPackUnpackUnpackedTexRGBA32UAV );
+    SAFE_RELEASE( g_pPackUnpackUnpackedTexRGBA32 );
+    SAFE_RELEASE( g_pPackUnpackPackedTexRG32Readback );
+    SAFE_RELEASE( g_pPackUnpackPackedTexRG32UAV );
+    SAFE_RELEASE( g_pPackUnpackPackedTexRG32 );
+    SAFE_RELEASE( g_pPackUnpackInputCB );
+    SAFE_RELEASE( g_pPackUnpackComputeShader );
+    SAFE_RELEASE( g_pPackUnpackComputeShaderBlob );
+}
+
+HRESULT RunPackUnpackGpuTest( ID3D11DeviceContext* pd3dImmediateContext )
+{
+    HRESULT hr;
+    if( !pd3dImmediateContext || !g_pPackUnpackComputeShader || !g_pPackUnpackInputCB ||
+        !g_pPackUnpackPackedTexRG32UAV || !g_pPackUnpackUnpackedTexRGBA32UAV ||
+        !g_pPackUnpackPackedTexRG32Readback || !g_pPackUnpackUnpackedTexRGBA32Readback )
+    {
+        return E_FAIL;
+    }
+
+    g_PackUnpackGpuTestResult = PACK_UNPACK_GPU_TEST_RESULT();
+    static std::mt19937 rng( std::random_device{}() );
+    std::uniform_real_distribution<float> dist( -20.0f,1000.0f );
+    g_PackUnpackGpuTestResult.input = D3DXVECTOR4(
+        dist( rng ),
+        dist( rng ),
+        dist( rng ),
+        dist( rng ) );
+
+    D3D11_MAPPED_SUBRESOURCE mapped = {};
+    V_RETURN( pd3dImmediateContext->Map( g_pPackUnpackInputCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped ) );
+    CB_PACK_UNPACK_GPU_TEST* pCB = reinterpret_cast<CB_PACK_UNPACK_GPU_TEST*>( mapped.pData );
+    pCB->vInput = g_PackUnpackGpuTestResult.input;
+    pd3dImmediateContext->Unmap( g_pPackUnpackInputCB, 0 );
+
+    ID3D11UnorderedAccessView* uavs[2] = { g_pPackUnpackPackedTexRG32UAV, g_pPackUnpackUnpackedTexRGBA32UAV };
+    UINT initialCounts[2] = { 0, 0 };
+
+    pd3dImmediateContext->CSSetShader( g_pPackUnpackComputeShader, NULL, 0 );
+    pd3dImmediateContext->CSSetConstantBuffers( 0, 1, &g_pPackUnpackInputCB );
+    pd3dImmediateContext->CSSetUnorderedAccessViews( 0, 2, uavs, initialCounts );
+    pd3dImmediateContext->Dispatch( 1, 1, 1 );
+
+    ID3D11UnorderedAccessView* nullUavs[2] = { NULL, NULL };
+    ID3D11Buffer* nullCB[1] = { NULL };
+    pd3dImmediateContext->CSSetUnorderedAccessViews( 0, 2, nullUavs, initialCounts );
+    pd3dImmediateContext->CSSetConstantBuffers( 0, 1, nullCB );
+    pd3dImmediateContext->CSSetShader( NULL, NULL, 0 );
+
+    pd3dImmediateContext->CopyResource( g_pPackUnpackPackedTexRG32Readback, g_pPackUnpackPackedTexRG32 );
+    pd3dImmediateContext->CopyResource( g_pPackUnpackUnpackedTexRGBA32Readback, g_pPackUnpackUnpackedTexRGBA32 );
+
+    D3D11_MAPPED_SUBRESOURCE packedMap = {};
+    V_RETURN( pd3dImmediateContext->Map( g_pPackUnpackPackedTexRG32Readback, 0, D3D11_MAP_READ, 0, &packedMap ) );
+    const float* pPackedFloats = reinterpret_cast<const float*>( packedMap.pData );
+    std::memcpy( &g_PackUnpackGpuTestResult.packedX, &pPackedFloats[0], sizeof( UINT ) );
+    std::memcpy( &g_PackUnpackGpuTestResult.packedY, &pPackedFloats[1], sizeof( UINT ) );
+    pd3dImmediateContext->Unmap( g_pPackUnpackPackedTexRG32Readback, 0 );
+
+    D3D11_MAPPED_SUBRESOURCE unpackedMap = {};
+    V_RETURN( pd3dImmediateContext->Map( g_pPackUnpackUnpackedTexRGBA32Readback, 0, D3D11_MAP_READ, 0, &unpackedMap ) );
+    const float* pUnpacked = reinterpret_cast<const float*>( unpackedMap.pData );
+    g_PackUnpackGpuTestResult.unpacked = D3DXVECTOR4( pUnpacked[0], pUnpacked[1], pUnpacked[2], pUnpacked[3] );
+    pd3dImmediateContext->Unmap( g_pPackUnpackUnpackedTexRGBA32Readback, 0 );
+
+    const float tolerance = 0.01f;
+    g_PackUnpackGpuTestResult.pass =
+        ( std::fabs( g_PackUnpackGpuTestResult.unpacked.x - g_PackUnpackGpuTestResult.input.x ) <= tolerance ) &&
+        ( std::fabs( g_PackUnpackGpuTestResult.unpacked.y - g_PackUnpackGpuTestResult.input.y ) <= tolerance ) &&
+        ( std::fabs( g_PackUnpackGpuTestResult.unpacked.z - g_PackUnpackGpuTestResult.input.z ) <= tolerance ) &&
+        ( std::fabs( g_PackUnpackGpuTestResult.unpacked.w - g_PackUnpackGpuTestResult.input.w ) <= tolerance );
+    g_PackUnpackGpuTestResult.valid = true;
+
+    return S_OK;
+}
+
 void RenderImGuiSelectorTab()
 {
     ImGui::Text( "%ls", DXUTGetFrameStats( DXUTIsVsyncEnabled() ) );
@@ -476,10 +660,45 @@ void RenderImGuiDebugTab()
         g_CascadedShadow.SetRenderDebugAllBoundingBoxesEnabled( renderAllBoundingBoxes );
     }
 
+    ImGui::Checkbox( "Show Pack/Unpack RG32 Test", &g_bShowPackUnpackTestPanel );
+    if( g_bShowPackUnpackTestPanel )
+    {
+        if( ImGui::Button( "Run Pack/Unpack Test" ) )
+        {
+            ID3D11DeviceContext* pd3dImmediateContext = DXUTGetD3D11DeviceContext();
+            if( pd3dImmediateContext )
+            {
+                RunPackUnpackGpuTest( pd3dImmediateContext );
+            }
+        }
+
+        if( g_PackUnpackGpuTestResult.valid )
+        {
+            ImGui::Text( "Pack RG32 bits: 0x%08X  0x%08X", g_PackUnpackGpuTestResult.packedX, g_PackUnpackGpuTestResult.packedY );
+            ImGui::Text( "Input    : %.6f, %.6f, %.6f, %.6f",
+                         g_PackUnpackGpuTestResult.input.x,
+                         g_PackUnpackGpuTestResult.input.y,
+                         g_PackUnpackGpuTestResult.input.z,
+                         g_PackUnpackGpuTestResult.input.w );
+            ImGui::Text( "Unpacked : %.6f, %.6f, %.6f, %.6f",
+                         g_PackUnpackGpuTestResult.unpacked.x,
+                         g_PackUnpackGpuTestResult.unpacked.y,
+                         g_PackUnpackGpuTestResult.unpacked.z,
+                         g_PackUnpackGpuTestResult.unpacked.w );
+            ImGui::TextColored( g_PackUnpackGpuTestResult.pass ? ImVec4( 0.3f, 1.0f, 0.3f, 1.0f ) : ImVec4( 1.0f, 0.3f, 0.3f, 1.0f ),
+                                g_PackUnpackGpuTestResult.pass ? "PASS" : "FAIL" );
+        }
+        else
+        {
+            ImGui::TextDisabled( "No test result yet." );
+        }
+        ImGui::Separator();
+    }
+
+    ImGui::Checkbox( "Show GBUFFER", &g_bShowGBufferPreview );
     ImGui::Separator();
 
-    ImGui::Separator();
-
+    if( g_bShowGBufferPreview )
     {
      /*   const float availableWidth = ImGui::GetContentRegionAvail().x;
         const float previewWidth = max(180.0f, min(availableWidth * 0.48f, 360.0f));
@@ -494,11 +713,10 @@ void RenderImGuiDebugTab()
 
         GBufferPreview previews[] =
         {
-            { "Normal",        g_CascadedShadow.m_GbufferRenderPass.GetPositionSRV()},
-            { "Position",         g_CascadedShadow.m_GbufferRenderPass.GetNormalsSRV() },
-            { "Tangent",       g_CascadedShadow.m_GbufferRenderPass.GetTangentSRV() },
-           
-            { "Motion Vector",  g_CascadedShadow.m_GbufferRenderPass.GetMotionVectorSRV() }
+            { "Position",      g_CascadedShadow.GetGBufferPositionSRV() },
+            { "Normal",        g_CascadedShadow.GetGBufferNormalsSRV() },
+            { "Tangent",       g_CascadedShadow.GetGBufferTangentSRV() },
+            { "Motion Vector", g_CascadedShadow.GetGBufferMotionVectorSRV() }
         };
 
         ImGui::Text("GBuffer Debug");
@@ -1275,6 +1493,9 @@ HRESULT CreateD3DComponents( ID3D11Device* pd3dDevice )
     g_CascadedShadow.Init( pd3dDevice, pd3dImmediateContext, 
         g_pSelectedMesh, &g_ViewerCamera, &g_LightCamera, &g_CascadeConfig );
 
+    V_RETURN( CreatePackUnpackGpuTestResources( pd3dDevice ) );
+    V_RETURN( RunPackUnpackGpuTest( pd3dImmediateContext ) );
+
     V_RETURN( InitializeImGui( pd3dDevice, pd3dImmediateContext ) );
     
     return S_OK;
@@ -1299,6 +1520,7 @@ HRESULT DestroyD3DComponents()
     ShutdownImGui();
     DXUTGetGlobalResourceCache().OnDestroyDevice();
 
+    ReleasePackUnpackGpuTestResources();
     g_CascadedShadow.DestroyAndDeallocateShadowResources();
     return S_OK;
 
@@ -1341,11 +1563,12 @@ void UpdateViewerCameraNearFar ()
 HRESULT CALLBACK OnD3D11ResizedSwapChain( ID3D11Device* pd3dDevice, IDXGISwapChain* pSwapChain,
                                           const DXGI_SURFACE_DESC* pBackBufferSurfaceDesc, void* pUserContext )
 {
-    UNREFERENCED_PARAMETER( pd3dDevice );
+    HRESULT hr = S_OK;
     UNREFERENCED_PARAMETER( pSwapChain );
     UNREFERENCED_PARAMETER( pUserContext );
 
     g_fAspectRatio = pBackBufferSurfaceDesc->Width / ( FLOAT ) pBackBufferSurfaceDesc->Height;
+    V_RETURN( g_CascadedShadow.ResizeGBuffer( pd3dDevice, pBackBufferSurfaceDesc->Width, pBackBufferSurfaceDesc->Height ) );
 
     UpdateViewerCameraNearFar();
 
@@ -1377,8 +1600,7 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
     pd3dImmediateContext->ClearDepthStencilView( pDSV, D3D11_CLEAR_DEPTH, 1.0, 0 );
 
     g_CascadedShadow.InitFrame( pd3dDevice, g_pSelectedMesh);
-
-    g_CascadedShadow.RenderShadowsForAllCascades( pd3dDevice, pd3dImmediateContext, g_pSelectedMesh);
+    g_CascadedShadow.RenderShadowsForAllCascades( pd3dDevice, pd3dImmediateContext, g_pSelectedMesh );
     
     D3D11_VIEWPORT vp;
     vp.Width =  (FLOAT)DXUTGetDXGIBackBufferSurfaceDesc()->Width;
@@ -1388,11 +1610,10 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
     vp.TopLeftX = 0;
     vp.TopLeftY = 0;
 
-
     if(!g_bVisualizeVoxel)
         g_CascadedShadow.RenderScene(pd3dImmediateContext, pRTV, pDSV, g_pSelectedMesh, g_pActiveCamera, &vp, g_bVisualizeCascades);
 
-    g_CascadedShadow.RenderGBuffer(pd3dImmediateContext,pRTV,pDSV,&vp);
+    g_CascadedShadow.RenderGBuffer( pd3dImmediateContext, pRTV, pDSV, &vp );
     g_CascadedShadow.RenderVoxelization(pd3dImmediateContext, g_pSelectedMesh, g_pActiveCamera);
     g_CascadedShadow.RenderVisualizeVoxelization(pd3dImmediateContext, pRTV, pDSV, g_pSelectedMesh, &vp, g_pActiveCamera,g_bVisualizeVoxel);
     g_CascadedShadow.RenderDebug(pd3dImmediateContext, pRTV, pDSV, &vp);

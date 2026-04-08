@@ -664,20 +664,11 @@ HRESULT CascadedShadowsManager::CreateDebugResources(ID3D11Device* pd3dDevice, c
 HRESULT CascadedShadowsManager::CreateGBufferResources(ID3D11Device* pd3dDevice, const ISceneMesh* pMesh)
 {
     HRESULT hr = S_OK;
-    m_GbufferRenderPass.SetMeshView(const_cast<ISceneMesh*>(pMesh));
-    V_RETURN(m_GbufferRenderPass.Create(pd3dDevice));
-
-    UINT Width = DXUTGetDXGIBackBufferSurfaceDesc()->Width;
-    UINT Height = DXUTGetDXGIBackBufferSurfaceDesc()->Height;
-    hr = GBufferRenderPass::CreateGBufferResources(pd3dDevice,
-        Width,
-        Height,
-        m_GbufferRenderPass.m_pGBufferTextures,
-        m_GbufferRenderPass.m_pRTVs,
-        m_GbufferRenderPass.m_pSRVs);
-
-
-
+    m_GbufferRenderPass.SetMeshView( const_cast<ISceneMesh*>( pMesh ) );
+    V_RETURN( m_GbufferRenderPass.Create( pd3dDevice ) );
+    V_RETURN( m_GbufferRenderPass.Resize( pd3dDevice,
+                                          DXUTGetDXGIBackBufferSurfaceDesc()->Width,
+                                          DXUTGetDXGIBackBufferSurfaceDesc()->Height ) );
     return hr;
 }
 
@@ -1894,6 +1885,11 @@ HRESULT CascadedShadowsManager::RenderGBuffer(ID3D11DeviceContext* pd3dDeviceCon
     m_GbufferRenderPass.SetOutput(prtvBackBuffer, pdsvBackBuffer, dxutViewPort);
     m_GbufferRenderPass.Execute(pd3dDeviceContext);
     return S_OK;
+}
+
+HRESULT CascadedShadowsManager::ResizeGBuffer( ID3D11Device* pd3dDevice, UINT width, UINT height )
+{
+    return m_GbufferRenderPass.Resize( pd3dDevice, width, height );
 }
 
 HRESULT CascadedShadowsManager::RenderVoxelizationVolume(ID3D11DeviceContext* pd3dDeviceContext,

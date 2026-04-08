@@ -119,6 +119,9 @@
     <None Include="GBuffer.hlsl">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="PackUnpackRG32.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
     <None Include="RenderCascadeScene.hlsl">
       <Filter>Shaders</Filter>
     </None>

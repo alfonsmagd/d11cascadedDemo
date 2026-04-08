@@ -47,7 +47,6 @@ struct GBufferFrameContext : public FrameContext
 
 class GBufferRenderPass : public IRenderPass
 {
-    friend class CascadedShadowsManager;
 public:
     GBufferRenderPass();
     ~GBufferRenderPass() override;
@@ -56,6 +55,7 @@ public:
     HRESULT Create( ID3D11Device* pd3dDevice ) override;
     void Destroy() override;
     HRESULT Execute( ID3D11DeviceContext* pd3dDeviceContext ) override;
+    HRESULT Resize( ID3D11Device* pd3dDevice, UINT width, UINT height );
 
     void SetOutput(ID3D11RenderTargetView* prtvBackBuffer, ID3D11DepthStencilView* pdsvBackBuffer, D3D11_VIEWPORT* pViewport);
     void SetMeshView( ISceneMesh* pMesh );
@@ -70,18 +70,6 @@ public:
 
     void SetGlobalConstantBuffer(ID3D11Buffer* pGlobalConstantBuffer) { m_pGlobalConstantBuffer = pGlobalConstantBuffer; }
     void SetInputVertexLayout(ID3D11InputLayout* pInputLayout) { m_pInputLayout = pInputLayout; }
-    HRESULT static GBufferRenderPass::ReleaseGBufferResources(
-        ID3D11Texture2D** pAuxGBufferTextures,
-        ID3D11RenderTargetView** pAuxGBufferRTVs,
-        ID3D11ShaderResourceView** pAuxGBufferSRVs);
-
-    HRESULT static GBufferRenderPass::CreateGBufferResources(
-        ID3D11Device* pd3dDevice,
-        UINT width,
-        UINT height,
-        ID3D11Texture2D** pAuxGBufferTextures,
-        ID3D11RenderTargetView** pAuxGBufferRTVs,
-        ID3D11ShaderResourceView** pAuxGBufferSRVs);
 
 private:
     enum
@@ -113,4 +101,6 @@ private:
     ID3D11RasterizerState* m_pRasterizerState;
     ID3D11Buffer* m_pGlobalConstantBuffer;
     ID3D11InputLayout* m_pInputLayout;
+
+    void ReleaseOwnedTargets();
 };

@@ -67,6 +67,7 @@ public:
         ID3D11RenderTargetView* prtvBackBuffer,
         ID3D11DepthStencilView* pdsvBackBuffer,
         D3D11_VIEWPORT* dxutViewPort);
+    HRESULT ResizeGBuffer( ID3D11Device* pd3dDevice, UINT width, UINT height );
 
     HRESULT RenderVoxelization(ID3D11DeviceContext* pd3dDeviceContext, 
                                ISceneMesh* pMesh, CFirstPersonCamera* pActiveCamera = NULL);
@@ -83,6 +84,10 @@ public:
     void SetRenderDebugEnabled( bool enabled ) { m_bRenderDebug = enabled; }
     bool IsRenderDebugEnabled() const { return m_bRenderDebug; }
     ID3D11ShaderResourceView* GetDebugShadowMapSRV() const { return m_pCascadedShadowMapSRV; }
+    ID3D11ShaderResourceView* GetGBufferPositionSRV() const { return m_GbufferRenderPass.GetPositionSRV(); }
+    ID3D11ShaderResourceView* GetGBufferNormalsSRV() const { return m_GbufferRenderPass.GetNormalsSRV(); }
+    ID3D11ShaderResourceView* GetGBufferTangentSRV() const { return m_GbufferRenderPass.GetTangentSRV(); }
+    ID3D11ShaderResourceView* GetGBufferMotionVectorSRV() const { return m_GbufferRenderPass.GetMotionVectorSRV(); }
     INT GetDebugShadowMapAtlasWidth() const { return max( 1, m_CopyOfCascadeConfig.m_iBufferSize * max( m_CopyOfCascadeConfig.m_nCascadeLevels, 1 ) ); }
     INT GetDebugShadowMapAtlasHeight() const { return max( 1, m_CopyOfCascadeConfig.m_iBufferSize ); }
     INT GetDebugShadowMapCascadeCount() const { return max( 1, m_CopyOfCascadeConfig.m_nCascadeLevels ); }
