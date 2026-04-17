@@ -8,6 +8,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <xnamath.h>
+
 #include "DXUT.h"
 #include "SDKMesh.h"
 #include "SDKmisc.h"
@@ -193,6 +195,11 @@ public:
     virtual void Destroy() = 0;
     virtual bool IsLoaded() const = 0;
     virtual void Render(ID3D11DeviceContext* pd3dDeviceContext,
+        UINT iDiffuseSlot = INVALID_SAMPLER_SLOT,
+        UINT iNormalSlot = INVALID_SAMPLER_SLOT,
+        UINT iSpecularSlot = INVALID_SAMPLER_SLOT) = 0;
+    virtual void RenderSubMeshes(ID3D11DeviceContext* pd3dDeviceContext,
+        const std::vector<INT>* pSubMeshIndices,
         UINT iDiffuseSlot = INVALID_SAMPLER_SLOT,
         UINT iNormalSlot = INVALID_SAMPLER_SLOT,
         UINT iSpecularSlot = INVALID_SAMPLER_SLOT) = 0;
@@ -403,7 +410,103 @@ public:
         UINT iNormalSlot = INVALID_SAMPLER_SLOT,
         UINT iSpecularSlot = INVALID_SAMPLER_SLOT) override
     {
-        m_Mesh.Render(pd3dDeviceContext, iDiffuseSlot, iNormalSlot, iSpecularSlot);
+        RenderSubMeshes( pd3dDeviceContext, NULL, iDiffuseSlot, iNormalSlot, iSpecularSlot );
+    }
+
+    void RenderSubMeshes(ID3D11DeviceContext* pd3dDeviceContext,
+        const std::vector<INT>* pSubMeshIndices,
+        UINT iDiffuseSlot = INVALID_SAMPLER_SLOT,
+        UINT iNormalSlot = INVALID_SAMPLER_SLOT,
+        UINT iSpecularSlot = INVALID_SAMPLER_SLOT) override
+    {
+        if( !pd3dDeviceContext )
+        {
+            return;
+        }
+
+        if( pSubMeshIndices == NULL )
+        {
+            m_Mesh.Render( pd3dDeviceContext, iDiffuseSlot, iNormalSlot, iSpecularSlot );
+            return;
+        }
+
+        if( pSubMeshIndices->empty() || m_SubMeshRuntimeData.empty() )
+        {
+            return;
+        }
+
+        CDXUTSDKMesh& meshAccess = m_Mesh;
+        ID3D11ShaderResourceView* pNullSRV = NULL;
+        UINT currentMeshIndex = UINT_MAX;
+
+        for( size_t subMeshListIndex = 0; subMeshListIndex < pSubMeshIndices->size(); ++subMeshListIndex )
+        {
+            const INT subMeshIndex = ( *pSubMeshIndices )[subMeshListIndex];
+            if( subMeshIndex < 0 || subMeshIndex >= INT( m_SubMeshRuntimeData.size() ) )
+            {
+                continue;
+            }
+
+            const SubMeshRuntimeData& runtimeData = m_SubMeshRuntimeData[subMeshIndex];
+            SDKMESH_MESH* pMesh = meshAccess.GetMesh( runtimeData.meshIndex );
+            SDKMESH_SUBSET* pSubset = meshAccess.GetSubset( runtimeData.meshIndex, runtimeData.subsetIndex );
+            if( !pMesh || !pSubset || pMesh->NumVertexBuffers == 0 )
+            {
+                continue;
+            }
+
+            if( currentMeshIndex != runtimeData.meshIndex )
+            {
+                UINT strides[MAX_VERTEX_STREAMS] = {};
+                UINT offsets[MAX_VERTEX_STREAMS] = {};
+                ID3D11Buffer* pVB[MAX_VERTEX_STREAMS] = {};
+
+                if( pMesh->NumVertexBuffers > MAX_VERTEX_STREAMS )
+                {
+                    continue;
+                }
+
+                for( UINT vbIndex = 0; vbIndex < pMesh->NumVertexBuffers; ++vbIndex )
+                {
+                    pVB[vbIndex] = meshAccess.GetVB11( runtimeData.meshIndex, vbIndex );
+                    strides[vbIndex] = meshAccess.GetVertexStride( runtimeData.meshIndex, vbIndex );
+                }
+
+                pd3dDeviceContext->IASetVertexBuffers( 0, pMesh->NumVertexBuffers, pVB, strides, offsets );
+                pd3dDeviceContext->IASetIndexBuffer( meshAccess.GetIB11( runtimeData.meshIndex ),
+                                                     meshAccess.GetIBFormat11( runtimeData.meshIndex ),
+                                                     0 );
+                currentMeshIndex = runtimeData.meshIndex;
+            }
+
+            pd3dDeviceContext->IASetPrimitiveTopology(
+                CDXUTSDKMesh::GetPrimitiveType11( (SDKMESH_PRIMITIVE_TYPE)pSubset->PrimitiveType ) );
+
+            SDKMESH_MATERIAL* pMaterial = meshAccess.GetMaterial( pSubset->MaterialID );
+            ID3D11ShaderResourceView* pDiffuseSRV =
+                ( pMaterial && !IsErrorResource( pMaterial->pDiffuseRV11 ) ) ? pMaterial->pDiffuseRV11 : pNullSRV;
+            ID3D11ShaderResourceView* pNormalSRV =
+                ( pMaterial && !IsErrorResource( pMaterial->pNormalRV11 ) ) ? pMaterial->pNormalRV11 : pNullSRV;
+            ID3D11ShaderResourceView* pSpecularSRV =
+                ( pMaterial && !IsErrorResource( pMaterial->pSpecularRV11 ) ) ? pMaterial->pSpecularRV11 : pNullSRV;
+
+            if( iDiffuseSlot != INVALID_SAMPLER_SLOT )
+            {
+                pd3dDeviceContext->PSSetShaderResources( iDiffuseSlot, 1, &pDiffuseSRV );
+            }
+            if( iNormalSlot != INVALID_SAMPLER_SLOT )
+            {
+                pd3dDeviceContext->PSSetShaderResources( iNormalSlot, 1, &pNormalSRV );
+            }
+            if( iSpecularSlot != INVALID_SAMPLER_SLOT )
+            {
+                pd3dDeviceContext->PSSetShaderResources( iSpecularSlot, 1, &pSpecularSRV );
+            }
+
+            pd3dDeviceContext->DrawIndexed( UINT( pSubset->IndexCount ),
+                                            UINT( pSubset->IndexStart ),
+                                            UINT( pSubset->VertexStart ) );
+        }
     }
 
     XMVECTOR GetAABBMin() const override
@@ -829,7 +932,16 @@ public:
         UINT iNormalSlot = INVALID_SAMPLER_SLOT,
         UINT iSpecularSlot = INVALID_SAMPLER_SLOT) override
     {
-        if (!m_pVertexBuffer || !m_pIndexBuffer)
+        RenderSubMeshes( pd3dDeviceContext, NULL, iDiffuseSlot, iNormalSlot, iSpecularSlot );
+    }
+
+    void RenderSubMeshes(ID3D11DeviceContext* pd3dDeviceContext,
+        const std::vector<INT>* pSubMeshIndices,
+        UINT iDiffuseSlot = INVALID_SAMPLER_SLOT,
+        UINT iNormalSlot = INVALID_SAMPLER_SLOT,
+        UINT iSpecularSlot = INVALID_SAMPLER_SLOT) override
+    {
+        if (!m_pVertexBuffer || !m_pIndexBuffer || !pd3dDeviceContext)
         {
             return;
         }
@@ -842,8 +954,43 @@ public:
 
         ID3D11ShaderResourceView* pNullSRV = NULL;
 
-        for (size_t subsetIndex = 0; subsetIndex < m_Subsets.size(); ++subsetIndex)
+        if( pSubMeshIndices == NULL )
         {
+            for (size_t subsetIndex = 0; subsetIndex < m_Subsets.size(); ++subsetIndex)
+            {
+                const Subset& subset = m_Subsets[subsetIndex];
+                const MaterialResources* pMaterial = (subset.MaterialID < m_Materials.size()) ? &m_Materials[subset.MaterialID] : NULL;
+
+                ID3D11ShaderResourceView* pDiffuseSRV = pMaterial ? pMaterial->pDiffuseSRV : m_pFallbackDiffuseSRV;
+                ID3D11ShaderResourceView* pNormalSRV = pMaterial ? pMaterial->pNormalSRV : NULL;
+                ID3D11ShaderResourceView* pSpecularSRV = pMaterial ? pMaterial->pSpecularSRV : NULL;
+
+                if (iDiffuseSlot != INVALID_SAMPLER_SLOT)
+                {
+                    pd3dDeviceContext->PSSetShaderResources(iDiffuseSlot, 1, &pDiffuseSRV);
+                }
+                if (iNormalSlot != INVALID_SAMPLER_SLOT)
+                {
+                    pd3dDeviceContext->PSSetShaderResources(iNormalSlot, 1, pNormalSRV ? &pNormalSRV : &pNullSRV);
+                }
+                if (iSpecularSlot != INVALID_SAMPLER_SLOT)
+                {
+                    pd3dDeviceContext->PSSetShaderResources(iSpecularSlot, 1, pSpecularSRV ? &pSpecularSRV : &pNullSRV);
+                }
+
+                pd3dDeviceContext->DrawIndexed(subset.IndexCount, subset.IndexStart, 0);
+            }
+            return;
+        }
+
+        for( size_t subMeshListIndex = 0; subMeshListIndex < pSubMeshIndices->size(); ++subMeshListIndex )
+        {
+            const INT subsetIndex = ( *pSubMeshIndices )[subMeshListIndex];
+            if( subsetIndex < 0 || subsetIndex >= INT( m_Subsets.size() ) )
+            {
+                continue;
+            }
+
             const Subset& subset = m_Subsets[subsetIndex];
             const MaterialResources* pMaterial = (subset.MaterialID < m_Materials.size()) ? &m_Materials[subset.MaterialID] : NULL;
 
@@ -1597,7 +1744,16 @@ public:
         UINT iNormalSlot = INVALID_SAMPLER_SLOT,
         UINT iSpecularSlot = INVALID_SAMPLER_SLOT) override
     {
-        if (!m_pVertexBuffer || !m_pIndexBuffer)
+        RenderSubMeshes( pd3dDeviceContext, NULL, iDiffuseSlot, iNormalSlot, iSpecularSlot );
+    }
+
+    void RenderSubMeshes(ID3D11DeviceContext* pd3dDeviceContext,
+        const std::vector<INT>* pSubMeshIndices,
+        UINT iDiffuseSlot = INVALID_SAMPLER_SLOT,
+        UINT iNormalSlot = INVALID_SAMPLER_SLOT,
+        UINT iSpecularSlot = INVALID_SAMPLER_SLOT) override
+    {
+        if (!m_pVertexBuffer || !m_pIndexBuffer || !pd3dDeviceContext)
         {
             return;
         }
@@ -1610,8 +1766,38 @@ public:
 
         ID3D11ShaderResourceView* pNullSRV = NULL;
 
-        for (size_t subsetIndex = 0; subsetIndex < m_Subsets.size(); ++subsetIndex)
+        if( pSubMeshIndices == NULL )
         {
+            for (size_t subsetIndex = 0; subsetIndex < m_Subsets.size(); ++subsetIndex)
+            {
+                const Subset& subset = m_Subsets[subsetIndex];
+
+                if (iDiffuseSlot != INVALID_SAMPLER_SLOT)
+                {
+                    pd3dDeviceContext->PSSetShaderResources(iDiffuseSlot, 1, &subset.pDiffuseSRV);
+                }
+                if (iNormalSlot != INVALID_SAMPLER_SLOT)
+                {
+                    pd3dDeviceContext->PSSetShaderResources(iNormalSlot, 1, &pNullSRV);
+                }
+                if (iSpecularSlot != INVALID_SAMPLER_SLOT)
+                {
+                    pd3dDeviceContext->PSSetShaderResources(iSpecularSlot, 1, &pNullSRV);
+                }
+
+                pd3dDeviceContext->DrawIndexed(subset.IndexCount, subset.IndexStart, 0);
+            }
+            return;
+        }
+
+        for( size_t subMeshListIndex = 0; subMeshListIndex < pSubMeshIndices->size(); ++subMeshListIndex )
+        {
+            const INT subsetIndex = ( *pSubMeshIndices )[subMeshListIndex];
+            if( subsetIndex < 0 || subsetIndex >= INT( m_Subsets.size() ) )
+            {
+                continue;
+            }
+
             const Subset& subset = m_Subsets[subsetIndex];
 
             if (iDiffuseSlot != INVALID_SAMPLER_SLOT)

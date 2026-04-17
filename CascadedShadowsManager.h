@@ -13,9 +13,12 @@
 #define _CASCADE_SHADOWS_H_
 
 #include "ShadowSampleMisc.h"
+#include "DXBuffer.h"
 #include "SceneMesh.h"
 #include "DebugRenderPass.h"
 #include "GBufferRenderPass.h"
+#include "DeferredDecalRenderPass.h"
+#include "CpuCullingSystem.h"
 #include <vector>
 
 class CFirstPersonCamera;
@@ -66,7 +69,14 @@ public:
     HRESULT RenderGBuffer(ID3D11DeviceContext* pd3dDeviceContext,
         ID3D11RenderTargetView* prtvBackBuffer,
         ID3D11DepthStencilView* pdsvBackBuffer,
-        D3D11_VIEWPORT* dxutViewPort);
+        D3D11_VIEWPORT* dxutViewPort,
+        CFirstPersonCamera* pActiveCamera,
+        ISceneMesh* pMesh);
+    HRESULT RenderDeferredDecal( ID3D11DeviceContext* pd3dDeviceContext,
+        ID3D11RenderTargetView* prtvBackBuffer,
+        D3D11_VIEWPORT* dxutViewPort,
+        CFirstPersonCamera* pActiveCamera,
+        ISceneMesh* pMesh );
     HRESULT ResizeGBuffer( ID3D11Device* pd3dDevice, UINT width, UINT height );
 
     HRESULT RenderVoxelization(ID3D11DeviceContext* pd3dDeviceContext, 
@@ -83,18 +93,36 @@ public:
     void InvalidateStaticVoxelization() { m_bStaticVoxelizationDirty = true; }
     void SetRenderDebugEnabled( bool enabled ) { m_bRenderDebug = enabled; }
     bool IsRenderDebugEnabled() const { return m_bRenderDebug; }
+    void SetRenderDeferredDecalEnabled( bool enabled ) { m_bRenderDeferredDecal = enabled; }
+    bool IsRenderDeferredDecalEnabled() const { return m_bRenderDeferredDecal; }
+    void SetUseShadowsEnabled( bool enabled ) { m_bUseShadows = enabled; }
+    bool IsUseShadowsEnabled() const { return m_bUseShadows; }
     ID3D11ShaderResourceView* GetDebugShadowMapSRV() const { return m_pCascadedShadowMapSRV; }
+    const DX::Texture::Resource2D* GetGBufferPositionTexture() const { return m_GbufferRenderPass.GetPositionTexture(); }
+    const DX::Texture::Resource2D* GetGBufferNormalsTexture() const { return m_GbufferRenderPass.GetNormalsTexture(); }
+    const DX::Texture::Resource2D* GetGBufferTangentTexture() const { return m_GbufferRenderPass.GetTangentTexture(); }
+    const DX::Texture::Resource2D* GetGBufferMotionVectorTexture() const { return m_GbufferRenderPass.GetMotionVectorTexture(); }
     ID3D11ShaderResourceView* GetGBufferPositionSRV() const { return m_GbufferRenderPass.GetPositionSRV(); }
     ID3D11ShaderResourceView* GetGBufferNormalsSRV() const { return m_GbufferRenderPass.GetNormalsSRV(); }
     ID3D11ShaderResourceView* GetGBufferTangentSRV() const { return m_GbufferRenderPass.GetTangentSRV(); }
     ID3D11ShaderResourceView* GetGBufferMotionVectorSRV() const { return m_GbufferRenderPass.GetMotionVectorSRV(); }
+    ID3D11ShaderResourceView* GetVoxelAlbedoSRV() const { return m_pVoxelAlbedoSRV; }
+    ID3D11ShaderResourceView* GetVoxelMaskSRV() const { return m_pVoxelMaskSRV; }
+    ID3D11ShaderResourceView* GetVoxelInstanceSRV() const { return m_pVoxelInstanceSRV; }
+    ID3D11ShaderResourceView* GetDynamicVoxelAlbedoSRV() const { return m_pDynamicVoxelAlbedoSRV; }
+    ID3D11ShaderResourceView* GetDynamicVoxelMaskSRV() const { return m_pDynamicVoxelMaskSRV; }
+    UINT GetCpuVisibleSubMeshCount() const { return m_CpuCullingSystem.GetVisibleSubMeshCount(); }
+    UINT GetCpuTotalSubMeshCount() const { return m_CpuCullingSystem.GetTotalSubMeshCount(); }
     INT GetDebugShadowMapAtlasWidth() const { return max( 1, m_CopyOfCascadeConfig.m_iBufferSize * max( m_CopyOfCascadeConfig.m_nCascadeLevels, 1 ) ); }
     INT GetDebugShadowMapAtlasHeight() const { return max( 1, m_CopyOfCascadeConfig.m_iBufferSize ); }
     INT GetDebugShadowMapCascadeCount() const { return max( 1, m_CopyOfCascadeConfig.m_nCascadeLevels ); }
     void SetRenderDebugBoundingBoxEnabled( bool enabled ) { m_DebugRenderPass.SetRenderBoundingBoxesEnabled( enabled ); }
     void SetRenderDebugAllBoundingBoxesEnabled(bool enabled) { m_DebugRenderPass.SetRenderAllBoundingBoxesEnabled( enabled ); }
+    void SetRenderDebugLightGizmosEnabled( bool enabled ) { m_DebugRenderPass.SetRenderLightGizmosEnabled( enabled ); }
     bool IsRenderDebugBoundingBoxEnabled() const { return m_DebugRenderPass.IsRenderBoundingBoxesEnabled(); }
     bool IsRenderDebugAllBoundingBoxesEnabled() const { return m_DebugRenderPass.IsRenderAllBoundingBoxesEnabled(); }
+    bool IsRenderDebugLightGizmosEnabled() const { return m_DebugRenderPass.IsRenderLightGizmosEnabled(); }
+    HRESULT ExecuteCpuCulling( ID3D11DeviceContext* pd3dDeviceContext, ISceneMesh* pMesh, CFirstPersonCamera* pViewCamera );
     HRESULT PickDebugBoundingBox( ID3D11DeviceContext* pd3dDeviceContext, const ISceneMesh* pMesh, INT mouseX, INT mouseY, const D3D11_VIEWPORT& viewport );
     HRESULT TranslateSelectedSubMesh( ID3D11Device* pd3dDevice, ID3D11DeviceContext* pd3dDeviceContext, ISceneMesh* pMesh, const D3DXVECTOR3& delta );
 
@@ -127,6 +155,8 @@ public:
     FIT_TO_NEAR_FAR                     m_eSelectedNearFarFit;
     CASCADE_SELECTION                   m_eSelectedCascadeSelection;
     GBufferRenderPass                   m_GbufferRenderPass;
+    DeferredDecalRenderPass             m_DeferredDecalRenderPass;
+    CpuCullingSystem                    m_CpuCullingSystem;
 
 private:
 
@@ -141,6 +171,7 @@ private:
     HRESULT CreateConstantBufferResources( ID3D11Device* pd3dDevice );
     HRESULT CreateDebugResources( ID3D11Device* pd3dDevice, const ISceneMesh* pMesh );
     HRESULT CreateGBufferResources(ID3D11Device* pd3dDevice, const ISceneMesh* pMesh);
+    HRESULT CreateDeferredDecalResources( ID3D11Device* pd3dDevice, const ISceneMesh* pMesh );
     HRESULT CreateShadowMapResources( ID3D11Device* pd3dDevice );
 
     // Compute the near and far plane by intersecting an Ortho Projection with the Scenes AABB.
@@ -186,6 +217,8 @@ private:
     XMVECTOR                            m_vDynamicVoxelAABBMax;
     bool                                m_bStaticVoxelizationDirty = true;
     bool                                m_bRenderDebug = false;
+    bool                                m_bRenderDeferredDecal = true;
+    bool                                m_bUseShadows = true;
                                                                                // For example: when the shadow buffer size changes.
     char                                m_cvsModel[31];
     char                                m_cpsModel[31];
@@ -249,9 +282,9 @@ private:
 	ID3D11Texture2D*                    m_pCascadedShadowMapTextureArray = nullptr;
 #endif
 
-    ID3D11Buffer*                       m_pcbVoxelParams = nullptr;
-    ID3D11Buffer*                       m_pcbVisualizeVoxels = nullptr;
-    ID3D11Buffer*                       m_pcbGlobalConstantBuffer = nullptr; // All VS and PS constants are in the same buffer.  
+    DX::Buffer::Resource                m_CBVoxelParams;
+    DX::Buffer::Resource                m_CBVisualizeVoxels;
+    DX::Buffer::Resource                m_CBGlobal; // All VS and PS constants are in the same buffer.  
                                                           // An actual title would break this up into multiple 
                                                           // buffers updated based on frequency of variable changes
 

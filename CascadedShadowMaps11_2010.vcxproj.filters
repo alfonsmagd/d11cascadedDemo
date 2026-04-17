@@ -79,13 +79,18 @@
   <ItemGroup>
     <ClCompile Include="CascadedShadowMaps11.cpp" />
     <ClCompile Include="CascadedShadowsManager.cpp" />
+    <ClCompile Include="ComparatorRenderPass.cpp" />
+    <ClCompile Include="CpuCullingSystem.cpp" />
     <ClCompile Include="DebugRenderPass.cpp" />
+    <ClCompile Include="DXBuffer.cpp" />
+    <ClCompile Include="DXTexture.cpp" />
     <ClCompile Include="DXUTGuiCompat.cpp">
       <Filter>DXUT</Filter>
     </ClCompile>
     <ClCompile Include="ShadowSampleMisc.cpp" />
     <ClCompile Include="xnacollision.cpp" />
     <CLInclude Include="CascadedShadowsManager.h" />
+    <ClInclude Include="CpuCullingSystem.h" />
     <ClInclude Include="DebugRenderPass.h" />
     <ClInclude Include="FrameContext.h" />
     <ClInclude Include="IRenderPass.h" />
@@ -113,10 +118,20 @@
     <ClCompile Include="external\imgui\imgui_widgets.cpp">
       <Filter>ImGui</Filter>
     </ClCompile>
+    <ClCompile Include="DeferredDecalRenderPass.cpp" />
     <ClCompile Include="GBufferRenderPass.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="DeferredDecal.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="ComparatorFullscreen.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
     <None Include="GBuffer.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="DebugLightGizmo.hlsl">
       <Filter>Shaders</Filter>
     </None>
     <None Include="PackUnpackRG32.hlsl">
@@ -161,7 +176,11 @@
     <ClInclude Include="external\imgui\imstb_truetype.h">
       <Filter>ImGui</Filter>
     </ClInclude>
+    <ClInclude Include="DeferredDecalRenderPass.h" />
     <ClInclude Include="GBufferRenderPass.h" />
+    <ClInclude Include="ComparatorRenderPass.h" />
+    <ClInclude Include="DXBuffer.h" />
+    <ClInclude Include="DXTexture.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Voxelization.hlsl">

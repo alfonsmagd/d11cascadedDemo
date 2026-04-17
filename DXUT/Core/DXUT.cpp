@@ -3889,9 +3889,22 @@ void DXUTRender3DEnvironment11()
         if( !IsIconic( DXUTGetHWND() ) )
         {
             GetClientRect( DXUTGetHWND(), &rcClient );
-            
-            assert( DXUTGetDXGIBackBufferSurfaceDesc()->Width == (UINT)rcClient.right );
-            assert( DXUTGetDXGIBackBufferSurfaceDesc()->Height == (UINT)rcClient.bottom );
+
+            const DXGI_SURFACE_DESC* pBackBufferDesc = DXUTGetDXGIBackBufferSurfaceDesc();
+            if( pBackBufferDesc )
+            {
+                // On handheld/high-DPI displays (for example, ROG Ally), transient
+                // client/backbuffer mismatches can happen during mode/scale transitions.
+                // Keep this as a debug diagnostic instead of a hard assert.
+                const UINT clientWidth = ( rcClient.right > 0 ) ? (UINT)rcClient.right : 0u;
+                const UINT clientHeight = ( rcClient.bottom > 0 ) ? (UINT)rcClient.bottom : 0u;
+                const bool widthMismatch = ( pBackBufferDesc->Width != clientWidth );
+                const bool heightMismatch = ( pBackBufferDesc->Height != clientHeight );
+                if( widthMismatch || heightMismatch )
+                {
+                    DXUTTRACE( L"DXUT: transient client/backbuffer mismatch detected.\n" );
+                }
+            }
         }
 #endif
     }

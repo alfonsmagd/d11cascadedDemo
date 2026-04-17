@@ -12,6 +12,8 @@
 
 #include "ShadowSampleMisc.h"
 #include "CascadedShadowsManager.h"
+#include "ComparatorRenderPass.h"
+#include "DXTexture.h"
 #include "SceneMesh.h"
 #include "imgui.h"
 #include "imgui_impl_dx11.h"
@@ -31,6 +33,7 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler( HWND hWnd, UINT ms
 // Global variables
 //--------------------------------------------------------------------------------------
 CascadedShadowsManager      g_CascadedShadow;
+ComparatorRenderPass       g_ComparatorRenderPass;
 
 CFirstPersonCamera          g_ViewerCamera;          
 CFirstPersonCamera          g_LightCamera;         
@@ -81,6 +84,27 @@ ID3D11Texture2D*            g_pPackUnpackUnpackedTexRGBA32 = NULL;
 ID3D11UnorderedAccessView*  g_pPackUnpackUnpackedTexRGBA32UAV = NULL;
 ID3D11Texture2D*            g_pPackUnpackUnpackedTexRGBA32Readback = NULL;
 bool                        g_bShowGBufferPreview = true;
+bool                        g_bShowBackBufferComparator = true;
+float                       g_fBackBufferComparatorSplit = 0.5f;
+DX::Texture::Resource2D     g_BackBufferPreviewTexture;
+DXGI_FORMAT                 g_BackBufferPreviewFormat = DXGI_FORMAT_UNKNOWN;
+UINT                        g_BackBufferSourceSampleCount = 1u;
+INT                         g_iComparatorLeftSRVIndex = 1;
+INT                         g_iComparatorRightSRVIndex = 0;
+bool                        g_bScreenComparatorDragging = false;
+
+struct DebugSRVEntry
+{
+    const char* pLabel;
+    ID3D11ShaderResourceView* pSRV;
+    bool showThumbnail;
+    bool screenComparable;
+};
+
+static const INT g_kMaxDebugSRVEntries = 16;
+DebugSRVEntry               g_DebugSRVCatalog[g_kMaxDebugSRVEntries] = {};
+INT                         g_nDebugSRVCatalogEntries = 0;
+bool                        g_bDebugSRVCatalogDirty = true;
 
 enum IMGUI_PANEL_TAB
 {
@@ -137,6 +161,194 @@ void RenderImGuiCascadesTab();
 HRESULT CreatePackUnpackGpuTestResources( ID3D11Device* pd3dDevice );
 void ReleasePackUnpackGpuTestResources();
 HRESULT RunPackUnpackGpuTest( ID3D11DeviceContext* pd3dImmediateContext );
+HRESULT ResizeBackBufferPreviewTexture( ID3D11Device* pd3dDevice, const DXGI_SURFACE_DESC* pBackBufferSurfaceDesc );
+void ReleaseBackBufferPreviewTexture();
+void CaptureBackBufferPreview( ID3D11DeviceContext* pd3dImmediateContext, ID3D11RenderTargetView* pRTV );
+void RefreshDebugSRVCatalog();
+bool GetComparatorSelection( DebugSRVEntry* pLeftEntry, DebugSRVEntry* pRightEntry );
+
+namespace
+{
+    void MarkDebugSRVCatalogDirty()
+    {
+        g_bDebugSRVCatalogDirty = true;
+    }
+
+    void AddDebugSRVCatalogEntry( INT& entryIndex,
+                                  const char* pLabel,
+                                  ID3D11ShaderResourceView* pSRV,
+                                  bool showThumbnail,
+                                  bool screenComparable )
+    {
+        if( entryIndex >= g_kMaxDebugSRVEntries )
+        {
+            return;
+        }
+
+        g_DebugSRVCatalog[entryIndex++] = { pLabel, pSRV, showThumbnail, screenComparable };
+    }
+
+    void BuildDebugSRVDisplayLabel( const DebugSRVEntry& entry, bool includeUnsupportedSuffix, char* pLabel, size_t labelSize )
+    {
+        sprintf_s( pLabel, labelSize, "%s%s%s",
+            entry.pLabel,
+            entry.pSRV ? "" : " (missing)",
+            ( includeUnsupportedSuffix && !entry.screenComparable ) ? " (unsupported)" : "" );
+    }
+
+    const char* GetSelectedDebugSRVLabel( const DebugSRVEntry* pEntries, INT entryCount, INT selectedIndex )
+    {
+        if( pEntries == NULL || entryCount <= 0 || selectedIndex < 0 || selectedIndex >= entryCount )
+        {
+            return "No SRVs";
+        }
+
+        return pEntries[selectedIndex].pLabel;
+    }
+
+    void RenderAvailableSRVEntries( const DebugSRVEntry* pEntries, INT entryCount )
+    {
+        if( !ImGui::TreeNodeEx( "Available SRVs", ImGuiTreeNodeFlags_DefaultOpen ) )
+        {
+            return;
+        }
+
+        for( INT srvIndex = 0; srvIndex < entryCount; ++srvIndex )
+        {
+            ImGui::BulletText( "%s%s%s",
+                pEntries[srvIndex].pLabel,
+                pEntries[srvIndex].pSRV ? "" : " (missing)",
+                pEntries[srvIndex].screenComparable ? "" : " (screen pass unsupported)" );
+        }
+
+        ImGui::TreePop();
+    }
+
+    void RenderComparatorSRVCombo( const char* pComboLabel, INT& selectedIndex, const DebugSRVEntry* pEntries, INT entryCount )
+    {
+        if( !ImGui::BeginCombo( pComboLabel, GetSelectedDebugSRVLabel( pEntries, entryCount, selectedIndex ) ) )
+        {
+            return;
+        }
+
+        for( INT srvIndex = 0; srvIndex < entryCount; ++srvIndex )
+        {
+            char label[128] = {};
+            BuildDebugSRVDisplayLabel( pEntries[srvIndex], true, label, ARRAYSIZE( label ) );
+
+            const bool isSelected = ( srvIndex == selectedIndex );
+            const bool isSelectable = pEntries[srvIndex].screenComparable;
+            if( !isSelectable )
+            {
+                ImGui::BeginDisabled();
+            }
+
+            if( ImGui::Selectable( label, isSelected && isSelectable ) && isSelectable )
+            {
+                selectedIndex = srvIndex;
+            }
+
+            if( !isSelectable )
+            {
+                ImGui::EndDisabled();
+            }
+
+            if( isSelected )
+            {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+
+        ImGui::EndCombo();
+    }
+
+    void RenderDebugSRVThumbnailGrid( const DebugSRVEntry* pEntries, INT entryCount )
+    {
+        INT shownTextureCount = 0;
+        for( INT textureIndex = 0; textureIndex < entryCount; ++textureIndex )
+        {
+            if( pEntries[textureIndex].pSRV == NULL || !pEntries[textureIndex].showThumbnail )
+            {
+                continue;
+            }
+
+            ImGui::BeginGroup();
+            ImGui::Text( "%s", pEntries[textureIndex].pLabel );
+            ImGui::Image( ImTextureRef( (ImTextureID)(UINT_PTR)pEntries[textureIndex].pSRV ), ImVec2( 128, 128 ) );
+
+            ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+            const ImVec2 imageMin = ImGui::GetItemRectMin();
+            const ImVec2 imageMax = ImGui::GetItemRectMax();
+            pDrawList->AddRect( imageMin, imageMax, IM_COL32( 255, 255, 255, 100 ), 4.0f, 0, 1.0f );
+            ImGui::EndGroup();
+
+            ++shownTextureCount;
+            if( ( shownTextureCount & 1 ) != 0 )
+            {
+                ImGui::SameLine();
+            }
+        }
+    }
+
+    void TranslateSelectedSubMesh( const D3DXVECTOR3& translation )
+    {
+        if( g_pSelectedMesh == NULL )
+        {
+            return;
+        }
+
+        ID3D11Device* pd3dDevice = DXUTGetD3D11Device();
+        ID3D11DeviceContext* pd3dDeviceContext = DXUTGetD3D11DeviceContext();
+        g_CascadedShadow.TranslateSelectedSubMesh( pd3dDevice, pd3dDeviceContext, g_pSelectedMesh, translation );
+    }
+
+    bool HandleScreenComparatorDrag( HWND hWnd, UINT uMsg, LPARAM lParam, bool* pbNoFurtherProcessing )
+    {
+        if( !g_bShowBackBufferComparator )
+        {
+            return false;
+        }
+
+        DebugSRVEntry leftEntry = {};
+        DebugSRVEntry rightEntry = {};
+        if( !GetComparatorSelection( &leftEntry, &rightEntry ) )
+        {
+            return false;
+        }
+
+        RECT clientRect = {};
+        GetClientRect( hWnd, &clientRect );
+        const float clientWidth = (FLOAT)max( clientRect.right - clientRect.left, 1 );
+        const INT mouseX = (INT)(short)LOWORD( lParam );
+        const float splitX = clientWidth * max( 0.0f, min( 1.0f, g_fBackBufferComparatorSplit ) );
+        const float handleTolerancePixels = 14.0f;
+
+        if( uMsg == WM_LBUTTONDOWN && fabsf( mouseX - splitX ) <= handleTolerancePixels )
+        {
+            g_bScreenComparatorDragging = true;
+            SetCapture( hWnd );
+            *pbNoFurtherProcessing = true;
+            return true;
+        }
+
+        if( uMsg == WM_MOUSEMOVE && g_bScreenComparatorDragging )
+        {
+            g_fBackBufferComparatorSplit = max( 0.0f, min( 1.0f, mouseX / clientWidth ) );
+            *pbNoFurtherProcessing = true;
+            return true;
+        }
+
+        if( uMsg == WM_LBUTTONUP && g_bScreenComparatorDragging )
+        {
+            g_bScreenComparatorDragging = false;
+            ReleaseCapture();
+            *pbNoFurtherProcessing = true;
+            return true;
+        }
+
+        return false;
+    }
+}
 
 const char* GetSceneSelectionName( SCENE_SELECTION sceneSelection )
 {
@@ -640,8 +852,138 @@ void RenderImGuiSelectorTab()
     }
 }
 
+HRESULT ResizeBackBufferPreviewTexture( ID3D11Device* pd3dDevice, const DXGI_SURFACE_DESC* pBackBufferSurfaceDesc )
+{
+    if( pd3dDevice == NULL || pBackBufferSurfaceDesc == NULL )
+    {
+        return E_INVALIDARG;
+    }
+
+    ReleaseBackBufferPreviewTexture();
+
+    DX::Texture::Desc2D desc;
+    desc.width = max( 1u, pBackBufferSurfaceDesc->Width );
+    desc.height = max( 1u, pBackBufferSurfaceDesc->Height );
+    desc.resourceFormat = pBackBufferSurfaceDesc->Format;
+    desc.srvFormat = pBackBufferSurfaceDesc->Format;
+    desc.bindFlags = D3D11_BIND_SHADER_RESOURCE;
+    desc.type = DX::Texture::Type::ShaderOnly2D;
+    desc.debugName = "BackBufferPreview";
+
+    g_BackBufferPreviewFormat = pBackBufferSurfaceDesc->Format;
+    g_BackBufferSourceSampleCount = max( 1u, pBackBufferSurfaceDesc->SampleDesc.Count );
+    const HRESULT hr = DX::Texture::Create2D( pd3dDevice, desc, NULL, g_BackBufferPreviewTexture );
+    MarkDebugSRVCatalogDirty();
+    return hr;
+}
+
+void ReleaseBackBufferPreviewTexture()
+{
+    g_BackBufferPreviewTexture.Destroy();
+    g_BackBufferPreviewFormat = DXGI_FORMAT_UNKNOWN;
+    g_BackBufferSourceSampleCount = 1u;
+    MarkDebugSRVCatalogDirty();
+}
+
+void CaptureBackBufferPreview( ID3D11DeviceContext* pd3dImmediateContext, ID3D11RenderTargetView* pRTV )
+{
+    if( pd3dImmediateContext == NULL || pRTV == NULL || g_BackBufferPreviewTexture.GetResource() == NULL || g_BackBufferPreviewFormat == DXGI_FORMAT_UNKNOWN )
+    {
+        return;
+    }
+
+    ID3D11Resource* pBackBufferResource = NULL;
+    pRTV->GetResource( &pBackBufferResource );
+    if( pBackBufferResource == NULL )
+    {
+        return;
+    }
+
+    pd3dImmediateContext->OMSetRenderTargets( 0, NULL, NULL );
+
+    if( g_BackBufferSourceSampleCount > 1u )
+    {
+        pd3dImmediateContext->ResolveSubresource( g_BackBufferPreviewTexture.GetResource(), 0, pBackBufferResource, 0, g_BackBufferPreviewFormat );
+    }
+    else
+    {
+        pd3dImmediateContext->CopyResource( g_BackBufferPreviewTexture.GetResource(), pBackBufferResource );
+    }
+
+    SAFE_RELEASE( pBackBufferResource );
+}
+
+void RefreshDebugSRVCatalog()
+{
+    if( !g_bDebugSRVCatalogDirty )
+    {
+        return;
+    }
+
+    g_nDebugSRVCatalogEntries = 0;
+    ZeroMemory( g_DebugSRVCatalog, sizeof( g_DebugSRVCatalog ) );
+
+    INT& entryIndex = g_nDebugSRVCatalogEntries;
+
+    AddDebugSRVCatalogEntry( entryIndex, "BackBuffer Preview",    g_BackBufferPreviewTexture.GetSRV(),          false, true );
+    AddDebugSRVCatalogEntry( entryIndex, "GBuffer Position",      g_CascadedShadow.GetGBufferPositionSRV(),     true,  true );
+    AddDebugSRVCatalogEntry( entryIndex, "GBuffer Normal",        g_CascadedShadow.GetGBufferNormalsSRV(),      true,  true );
+    AddDebugSRVCatalogEntry( entryIndex, "GBuffer Tangent",       g_CascadedShadow.GetGBufferTangentSRV(),      true,  true );
+    AddDebugSRVCatalogEntry( entryIndex, "GBuffer Motion Vector", g_CascadedShadow.GetGBufferMotionVectorSRV(), true,  true );
+    AddDebugSRVCatalogEntry( entryIndex, "Cascade Shadow Atlas",  g_CascadedShadow.GetDebugShadowMapSRV(),      false, true );
+    AddDebugSRVCatalogEntry( entryIndex, "Static Voxel Albedo",   g_CascadedShadow.GetVoxelAlbedoSRV(),        false, false );
+    AddDebugSRVCatalogEntry( entryIndex, "Static Voxel Mask",     g_CascadedShadow.GetVoxelMaskSRV(),          false, false );
+    AddDebugSRVCatalogEntry( entryIndex, "Static Voxel Instance", g_CascadedShadow.GetVoxelInstanceSRV(),      false, false );
+    AddDebugSRVCatalogEntry( entryIndex, "Dynamic Voxel Albedo",  g_CascadedShadow.GetDynamicVoxelAlbedoSRV(), false, false );
+    AddDebugSRVCatalogEntry( entryIndex, "Dynamic Voxel Mask",    g_CascadedShadow.GetDynamicVoxelMaskSRV(),   false, false );
+
+    if( g_nDebugSRVCatalogEntries > 0 )
+    {
+        g_iComparatorLeftSRVIndex = max( 0, min( g_iComparatorLeftSRVIndex, g_nDebugSRVCatalogEntries - 1 ) );
+        g_iComparatorRightSRVIndex = max( 0, min( g_iComparatorRightSRVIndex, g_nDebugSRVCatalogEntries - 1 ) );
+    }
+    else
+    {
+        g_iComparatorLeftSRVIndex = 0;
+        g_iComparatorRightSRVIndex = 0;
+    }
+
+    g_bDebugSRVCatalogDirty = false;
+}
+
+bool GetComparatorSelection( DebugSRVEntry* pLeftEntry, DebugSRVEntry* pRightEntry )
+{
+    RefreshDebugSRVCatalog();
+    if( g_nDebugSRVCatalogEntries <= 0 )
+    {
+        return false;
+    }
+
+    const DebugSRVEntry& leftEntry = g_DebugSRVCatalog[g_iComparatorLeftSRVIndex];
+    const DebugSRVEntry& rightEntry = g_DebugSRVCatalog[g_iComparatorRightSRVIndex];
+
+    if( pLeftEntry != NULL )
+    {
+        *pLeftEntry = leftEntry;
+    }
+    if( pRightEntry != NULL )
+    {
+        *pRightEntry = rightEntry;
+    }
+
+    return leftEntry.pSRV != NULL &&
+           rightEntry.pSRV != NULL &&
+           leftEntry.screenComparable &&
+           rightEntry.screenComparable;
+}
+
 void RenderImGuiDebugTab()
 {
+    const UINT visibleSubMeshes = g_CascadedShadow.GetCpuVisibleSubMeshCount();
+    const UINT totalSubMeshes = g_CascadedShadow.GetCpuTotalSubMeshCount();
+    ImGui::Text( "Visible SubMeshes: %u / %u", visibleSubMeshes, totalSubMeshes );
+    ImGui::Separator();
+
     bool renderDebug = g_CascadedShadow.IsRenderDebugEnabled();
     if( ImGui::Checkbox( "Render Debug", &renderDebug ) )
     {
@@ -659,6 +1001,19 @@ void RenderImGuiDebugTab()
     {
         g_CascadedShadow.SetRenderDebugAllBoundingBoxesEnabled( renderAllBoundingBoxes );
     }
+
+    bool renderLightGizmos = g_CascadedShadow.IsRenderDebugLightGizmosEnabled();
+    if( ImGui::Checkbox( "Render Light Gizmos", &renderLightGizmos ) )
+    {
+        g_CascadedShadow.SetRenderDebugLightGizmosEnabled( renderLightGizmos );
+    }
+
+    bool renderDeferredDecal = g_CascadedShadow.IsRenderDeferredDecalEnabled();
+    if( ImGui::Checkbox( "Render Deferred Decal", &renderDeferredDecal ) )
+    {
+        g_CascadedShadow.SetRenderDeferredDecalEnabled( renderDeferredDecal );
+    }
+    ImGui::TextDisabled( "Example: screen-space decal using GBuffer Position/Normal and a black-white stripe texture." );
 
     ImGui::Checkbox( "Show Pack/Unpack RG32 Test", &g_bShowPackUnpackTestPanel );
     if( g_bShowPackUnpackTestPanel )
@@ -700,55 +1055,38 @@ void RenderImGuiDebugTab()
 
     if( g_bShowGBufferPreview )
     {
-     /*   const float availableWidth = ImGui::GetContentRegionAvail().x;
-        const float previewWidth = max(180.0f, min(availableWidth * 0.48f, 360.0f));
-        const float aspect = (FLOAT)g_GBufferPass.GetGBufferHeight() / max((FLOAT)g_GBufferPass.GetGBufferWidth(), 1.0f);
-        const float previewHeight = previewWidth * aspect;*/
+        RefreshDebugSRVCatalog();
+        const DebugSRVEntry* previews = g_DebugSRVCatalog;
+        const INT previewCount = g_nDebugSRVCatalogEntries;
+        DebugSRVEntry leftEntry = {};
+        DebugSRVEntry rightEntry = {};
+        const bool comparatorRenderable = GetComparatorSelection( &leftEntry, &rightEntry );
 
-        struct GBufferPreview
-        {
-            const char* pLabel;
-            ID3D11ShaderResourceView* pSRV;
-        };
-
-        GBufferPreview previews[] =
-        {
-            { "Position",      g_CascadedShadow.GetGBufferPositionSRV() },
-            { "Normal",        g_CascadedShadow.GetGBufferNormalsSRV() },
-            { "Tangent",       g_CascadedShadow.GetGBufferTangentSRV() },
-            { "Motion Vector", g_CascadedShadow.GetGBufferMotionVectorSRV() }
-        };
-
-        ImGui::Text("GBuffer Debug");
-        //ImGui::TextDisabled("%dx%d", g_GBufferPass.GetGBufferWidth(), g_GBufferPass.GetGBufferHeight());
+        ImGui::Text( "GBuffer Debug" );
         ImGui::Separator();
+        RenderAvailableSRVEntries( previews, previewCount );
 
-        for (INT textureIndex = 0; textureIndex < _countof(previews); ++textureIndex)
+        ImGui::Checkbox( "Show BackBuffer Comparator", &g_bShowBackBufferComparator );
+        if( g_bShowBackBufferComparator )
         {
-            if (previews[textureIndex].pSRV == NULL)
+            ImGui::SliderFloat( "Comparator Split", &g_fBackBufferComparatorSplit, 0.0f, 1.0f, "%.2f" );
+            RenderComparatorSRVCombo( "Compare Left", g_iComparatorLeftSRVIndex, previews, previewCount );
+            RenderComparatorSRVCombo( "Compare Right", g_iComparatorRightSRVIndex, previews, previewCount );
+
+            if( comparatorRenderable )
             {
-                continue;
+                ImGui::TextWrapped( "The comparator is now rendered in the main viewport. Drag the red bar directly on screen, or use this slider." );
+                ImGui::TextDisabled( "Left: %s | Right: %s", leftEntry.pLabel, rightEntry.pLabel );
+            }
+            else
+            {
+                ImGui::TextDisabled( "Comparator unavailable until both selected SRVs exist and support the screen pass." );
             }
 
-            ImGui::BeginGroup();
-            ImGui::Text("%s", previews[textureIndex].pLabel);
-
-            ImGui::Image(
-                ImTextureRef((ImTextureID)(UINT_PTR)previews[textureIndex].pSRV),
-                ImVec2(128, 128));
-
-            ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-            const ImVec2 imageMin = ImGui::GetItemRectMin();
-            const ImVec2 imageMax = ImGui::GetItemRectMax();
-            pDrawList->AddRect(imageMin, imageMax, IM_COL32(255, 255, 255, 100), 4.0f, 0, 1.0f);
-
-            ImGui::EndGroup();
-
-            if ((textureIndex & 1) == 0)
-            {
-                ImGui::SameLine();
-            }
+            ImGui::Separator();
         }
+
+        RenderDebugSRVThumbnailGrid( previews, previewCount );
 
         ImGui::Separator();
         ImGui::TextWrapped("This panel shows the current GBuffer textures used by the geometry pass.");
@@ -879,6 +1217,11 @@ void RenderImGuiCascadesTab()
     NormalizeShadowSettings();
 
     ImGui::Checkbox( "Visualize Cascades", &g_bVisualizeCascades );
+    bool useShadows = g_CascadedShadow.IsUseShadowsEnabled();
+    if( ImGui::Checkbox( "Use Shadows", &useShadows ) )
+    {
+        g_CascadedShadow.SetUseShadowsEnabled( useShadows );
+    }
 
     if( ImGui::BeginCombo( "Depth Buffer", GetShadowTextureFormatName( g_CascadeConfig.m_ShadowBufferFormat ) ) )
     {
@@ -1062,9 +1405,6 @@ void RenderImGuiOverlay( ID3D11DeviceContext* pd3dImmediateContext, double fTime
         ImGui::SetNextWindowPos( ImVec2( 18.0f, 18.0f ), ImGuiCond_FirstUseEver );
         ImGui::SetNextWindowSize( ImVec2( 390.0f, 520.0f ), ImGuiCond_FirstUseEver );
 
-
-        RenderImGuiDebugTab();
-
         if( ImGui::Begin( "Renderer Controls", &g_bShowImGuiOverlay ) )
         {
             ImGui::Text( "DX11 + Win32 backend mounted on DXUT core only" );
@@ -1083,7 +1423,7 @@ void RenderImGuiOverlay( ID3D11DeviceContext* pd3dImmediateContext, double fTime
                 if( ImGui::BeginTabItem( "Debug" ) )
                 {
                     g_eSelectedImGuiTab = IMGUI_PANEL_TAB_DEBUG;
-                    
+                    RenderImGuiDebugTab();
                     ImGui::EndTabItem();
                 }
 
@@ -1174,6 +1514,7 @@ HRESULT ApplySceneSelectionChange()
     g_pActiveCamera = &g_ViewerCamera;
     ResetSceneCameras();
     V_RETURN( g_CascadedShadow.HandleSceneChanged( pd3dDevice, g_pSelectedMesh ) );
+    MarkDebugSRVCatalogDirty();
     UpdateViewerCameraNearFar();
     return S_OK;
 }
@@ -1350,6 +1691,11 @@ LRESULT CALLBACK MsgProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, bo
         }
     }
 
+    if( HandleScreenComparatorDrag( hWnd, uMsg, lParam, pbNoFurtherProcessing ) )
+    {
+        return 0;
+    }
+
     if( uMsg == WM_LBUTTONDOWN && g_CascadedShadow.IsRenderDebugAllBoundingBoxesEnabled() )
     {
         ID3D11DeviceContext* pd3dDeviceContext = DXUTGetD3D11DeviceContext();
@@ -1416,54 +1762,24 @@ void CALLBACK OnKeyboard( UINT nChar, bool bKeyDown, bool bAltDown, void* pUserC
                 g_bShowHelp = !g_bShowHelp; break;
 
             case 'J':
-                if( g_pSelectedMesh )
-                {
-                    ID3D11Device* pd3dDevice = DXUTGetD3D11Device();
-                    ID3D11DeviceContext* pd3dDeviceContext = DXUTGetD3D11DeviceContext();
-                    g_CascadedShadow.TranslateSelectedSubMesh( pd3dDevice, pd3dDeviceContext, g_pSelectedMesh, D3DXVECTOR3( -1.0f, 0.0f, 0.0f ) );
-                }
+                TranslateSelectedSubMesh( D3DXVECTOR3( -1.0f, 0.0f, 0.0f ) );
             break;
 
             case 'K':
-                if( g_pSelectedMesh )
-                {
-                    ID3D11Device* pd3dDevice = DXUTGetD3D11Device();
-                    ID3D11DeviceContext* pd3dDeviceContext = DXUTGetD3D11DeviceContext();
-                    g_CascadedShadow.TranslateSelectedSubMesh( pd3dDevice, pd3dDeviceContext, g_pSelectedMesh, D3DXVECTOR3( 1.0f, 0.0f, 0.0f ) );
-                }
+                TranslateSelectedSubMesh( D3DXVECTOR3( 1.0f, 0.0f, 0.0f ) );
             break;
             case 'M':
-                if (g_pSelectedMesh)
-                {
-                    ID3D11Device* pd3dDevice = DXUTGetD3D11Device();
-                    ID3D11DeviceContext* pd3dDeviceContext = DXUTGetD3D11DeviceContext();
-                    g_CascadedShadow.TranslateSelectedSubMesh(pd3dDevice, pd3dDeviceContext, g_pSelectedMesh, D3DXVECTOR3(0.0f, 1.0f, 0.0f));
-                }
+                TranslateSelectedSubMesh( D3DXVECTOR3( 0.0f, 1.0f, 0.0f ) );
                 break;
             case 'I':
-                if (g_pSelectedMesh)
-                {
-                    ID3D11Device* pd3dDevice = DXUTGetD3D11Device();
-                    ID3D11DeviceContext* pd3dDeviceContext = DXUTGetD3D11DeviceContext();
-                    g_CascadedShadow.TranslateSelectedSubMesh(pd3dDevice, pd3dDeviceContext, g_pSelectedMesh, D3DXVECTOR3(0.0f, -1.0f, 0.0f));
-                }
+                TranslateSelectedSubMesh( D3DXVECTOR3( 0.0f, -1.0f, 0.0f ) );
                 break;
             case 'O':
-                if (g_pSelectedMesh)
-                {
-                    ID3D11Device* pd3dDevice = DXUTGetD3D11Device();
-                    ID3D11DeviceContext* pd3dDeviceContext = DXUTGetD3D11DeviceContext();
-                    g_CascadedShadow.TranslateSelectedSubMesh(pd3dDevice, pd3dDeviceContext, g_pSelectedMesh, D3DXVECTOR3(0.0f, 0.0f, 1.0f));
-                }
+                TranslateSelectedSubMesh( D3DXVECTOR3( 0.0f, 0.0f, 1.0f ) );
                 break;
             case 'P':
-                if (g_pSelectedMesh)
-                {
-                    ID3D11Device* pd3dDevice = DXUTGetD3D11Device();
-                    ID3D11DeviceContext* pd3dDeviceContext = DXUTGetD3D11DeviceContext();
-                    g_CascadedShadow.TranslateSelectedSubMesh(pd3dDevice, pd3dDeviceContext, g_pSelectedMesh, D3DXVECTOR3(0.0f, 0.0f, -1.0f));
-                }
-
+                TranslateSelectedSubMesh( D3DXVECTOR3( 0.0f, 0.0f, -1.0f ) );
+            break;
         }
     }
 }
@@ -1493,10 +1809,12 @@ HRESULT CreateD3DComponents( ID3D11Device* pd3dDevice )
     g_CascadedShadow.Init( pd3dDevice, pd3dImmediateContext, 
         g_pSelectedMesh, &g_ViewerCamera, &g_LightCamera, &g_CascadeConfig );
 
+    V_RETURN( g_ComparatorRenderPass.Create( pd3dDevice ) );
     V_RETURN( CreatePackUnpackGpuTestResources( pd3dDevice ) );
     V_RETURN( RunPackUnpackGpuTest( pd3dImmediateContext ) );
 
     V_RETURN( InitializeImGui( pd3dDevice, pd3dImmediateContext ) );
+    MarkDebugSRVCatalogDirty();
     
     return S_OK;
 }
@@ -1520,8 +1838,11 @@ HRESULT DestroyD3DComponents()
     ShutdownImGui();
     DXUTGetGlobalResourceCache().OnDestroyDevice();
 
+    g_ComparatorRenderPass.Destroy();
+    ReleaseBackBufferPreviewTexture();
     ReleasePackUnpackGpuTestResources();
     g_CascadedShadow.DestroyAndDeallocateShadowResources();
+    MarkDebugSRVCatalogDirty();
     return S_OK;
 
 }
@@ -1567,8 +1888,18 @@ HRESULT CALLBACK OnD3D11ResizedSwapChain( ID3D11Device* pd3dDevice, IDXGISwapCha
     UNREFERENCED_PARAMETER( pSwapChain );
     UNREFERENCED_PARAMETER( pUserContext );
 
-    g_fAspectRatio = pBackBufferSurfaceDesc->Width / ( FLOAT ) pBackBufferSurfaceDesc->Height;
-    V_RETURN( g_CascadedShadow.ResizeGBuffer( pd3dDevice, pBackBufferSurfaceDesc->Width, pBackBufferSurfaceDesc->Height ) );
+    if( !pd3dDevice || !pBackBufferSurfaceDesc )
+    {
+        return E_INVALIDARG;
+    }
+
+    const UINT safeWidth = max( 1u, pBackBufferSurfaceDesc->Width );
+    const UINT safeHeight = max( 1u, pBackBufferSurfaceDesc->Height );
+
+    g_fAspectRatio = safeWidth / (FLOAT)safeHeight;
+    V_RETURN( g_CascadedShadow.ResizeGBuffer( pd3dDevice, safeWidth, safeHeight ) );
+    V_RETURN( ResizeBackBufferPreviewTexture( pd3dDevice, pBackBufferSurfaceDesc ) );
+    MarkDebugSRVCatalogDirty();
 
     UpdateViewerCameraNearFar();
 
@@ -1582,6 +1913,7 @@ HRESULT CALLBACK OnD3D11ResizedSwapChain( ID3D11Device* pd3dDevice, IDXGISwapCha
 void CALLBACK OnD3D11ReleasingSwapChain( void* pUserContext )
 {
     UNREFERENCED_PARAMETER( pUserContext );
+    ReleaseBackBufferPreviewTexture();
 }
 
 
@@ -1600,11 +1932,18 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
     pd3dImmediateContext->ClearDepthStencilView( pDSV, D3D11_CLEAR_DEPTH, 1.0, 0 );
 
     g_CascadedShadow.InitFrame( pd3dDevice, g_pSelectedMesh);
+    g_CascadedShadow.ExecuteCpuCulling( pd3dImmediateContext, g_pSelectedMesh, g_pActiveCamera );
     g_CascadedShadow.RenderShadowsForAllCascades( pd3dDevice, pd3dImmediateContext, g_pSelectedMesh );
     
+    const DXGI_SURFACE_DESC* pBackBufferDesc = DXUTGetDXGIBackBufferSurfaceDesc();
+    if( !pBackBufferDesc )
+    {
+        return;
+    }
+
     D3D11_VIEWPORT vp;
-    vp.Width =  (FLOAT)DXUTGetDXGIBackBufferSurfaceDesc()->Width;
-    vp.Height = (FLOAT)DXUTGetDXGIBackBufferSurfaceDesc()->Height;
+    vp.Width = (FLOAT)max( 1u, pBackBufferDesc->Width );
+    vp.Height = (FLOAT)max( 1u, pBackBufferDesc->Height );
     vp.MinDepth = 0;
     vp.MaxDepth = 1;
     vp.TopLeftX = 0;
@@ -1613,10 +1952,25 @@ void CALLBACK OnD3D11FrameRender( ID3D11Device* pd3dDevice, ID3D11DeviceContext*
     if(!g_bVisualizeVoxel)
         g_CascadedShadow.RenderScene(pd3dImmediateContext, pRTV, pDSV, g_pSelectedMesh, g_pActiveCamera, &vp, g_bVisualizeCascades);
 
-    g_CascadedShadow.RenderGBuffer( pd3dImmediateContext, pRTV, pDSV, &vp );
+    g_CascadedShadow.RenderGBuffer( pd3dImmediateContext, pRTV, pDSV, &vp, g_pActiveCamera, g_pSelectedMesh );
+    g_CascadedShadow.RenderDeferredDecal( pd3dImmediateContext, pRTV, &vp, g_pActiveCamera, g_pSelectedMesh );
     g_CascadedShadow.RenderVoxelization(pd3dImmediateContext, g_pSelectedMesh, g_pActiveCamera);
     g_CascadedShadow.RenderVisualizeVoxelization(pd3dImmediateContext, pRTV, pDSV, g_pSelectedMesh, &vp, g_pActiveCamera,g_bVisualizeVoxel);
     g_CascadedShadow.RenderDebug(pd3dImmediateContext, pRTV, pDSV, &vp);
+    CaptureBackBufferPreview( pd3dImmediateContext, pRTV );
+    RefreshDebugSRVCatalog();
+
+    DebugSRVEntry leftEntry = {};
+    DebugSRVEntry rightEntry = {};
+    const bool comparatorRenderable = g_bShowBackBufferComparator && GetComparatorSelection( &leftEntry, &rightEntry );
+    g_ComparatorRenderPass.SetEnabled( comparatorRenderable );
+    if( comparatorRenderable )
+    {
+        g_ComparatorRenderPass.SetOutput( pRTV, &vp );
+        g_ComparatorRenderPass.SetInputs( leftEntry.pSRV, rightEntry.pSRV );
+        g_ComparatorRenderPass.SetSplit( g_fBackBufferComparatorSplit );
+        g_ComparatorRenderPass.Execute( pd3dImmediateContext );
+    }
 
     pd3dImmediateContext->RSSetViewports( 1, &vp);            
     pd3dImmediateContext->OMSetRenderTargets( 1, &pRTV, pDSV );

@@ -112,6 +112,7 @@ struct CB_ALL_SHADOW_DATA
     D3DXVECTOR4 m_fCascadeFrustumsEyeSpaceDepthsFloat4[8];// the values along Z that separte the cascades.  
                                                           // Wastefully stored in float4 so they are array indexable :(
     D3DXVECTOR4 m_vLightDir;
+    D3DXVECTOR4 m_vShadowControl;
 };
 
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IRenderPass.h"
+#include "DXTexture.h"
 #include "FrameContext.h"
 #include "ShadowSampleMisc.h"
 #include "SceneMesh.h"
@@ -9,27 +10,11 @@
 #define MAX_GBUFFER_RTV 4
 struct GBufferOutput
 {
-    ID3D11RenderTargetView* pPositionRTV;
-    ID3D11RenderTargetView* pNormalsRTV;
-    ID3D11RenderTargetView* pTangentRTV;
-    ID3D11RenderTargetView* pMotionVectorRTV;
-    ID3D11ShaderResourceView* pPositionSRV;
-    ID3D11ShaderResourceView* pNormalsSRV;
-    ID3D11ShaderResourceView* pTangentSRV;
-    ID3D11ShaderResourceView* pMotionVectorSRV;
     ID3D11DepthStencilView* pDepthStencilView;
     D3D11_VIEWPORT* pViewport;
 
     GBufferOutput()
-        : pPositionRTV( NULL )
-        , pNormalsRTV( NULL )
-        , pTangentRTV( NULL )
-        , pMotionVectorRTV( NULL )
-        , pPositionSRV( NULL )
-        , pNormalsSRV( NULL )
-        , pTangentSRV( NULL )
-        , pMotionVectorSRV( NULL )
-        , pDepthStencilView( NULL )
+        : pDepthStencilView( NULL )
         , pViewport( NULL )
     {
     }
@@ -59,6 +44,11 @@ public:
 
     void SetOutput(ID3D11RenderTargetView* prtvBackBuffer, ID3D11DepthStencilView* pdsvBackBuffer, D3D11_VIEWPORT* pViewport);
     void SetMeshView( ISceneMesh* pMesh );
+    void SetVisibleSubMeshes( const std::vector<INT>* pVisibleSubMeshes );
+    const DX::Texture::Resource2D* GetPositionTexture() const;
+    const DX::Texture::Resource2D* GetNormalsTexture() const;
+    const DX::Texture::Resource2D* GetTangentTexture() const;
+    const DX::Texture::Resource2D* GetMotionVectorTexture() const;
     ID3D11ShaderResourceView* GetPositionSRV() const;
     ID3D11ShaderResourceView* GetNormalsSRV() const;
     ID3D11ShaderResourceView* GetTangentSRV() const;
@@ -83,10 +73,9 @@ private:
 
     GBufferFrameContext m_FrameContext;
     ISceneMesh* m_pMeshView;
+    const std::vector<INT>* m_pVisibleSubMeshes;
 
-    ID3D11Texture2D*        m_pGBufferTextures[GBUFFER_RTV_COUNT];
-    ID3D11RenderTargetView* m_pRTVs[GBUFFER_RTV_COUNT];
-    ID3D11ShaderResourceView* m_pSRVs[GBUFFER_RTV_COUNT];
+    DX::Texture::Resource2D m_GBufferTargets[GBUFFER_RTV_COUNT];
 
     ID3D11VertexShader* m_pGeometryVS;
     ID3D11PixelShader* m_pGeometryPS;
@@ -102,5 +91,6 @@ private:
     ID3D11Buffer* m_pGlobalConstantBuffer;
     ID3D11InputLayout* m_pInputLayout;
 
+    void ResolveCameraMatrices( D3DXMATRIX& dxmatCameraView, D3DXMATRIX& dxmatCameraProj ) const;
     void ReleaseOwnedTargets();
 };

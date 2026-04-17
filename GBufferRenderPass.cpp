@@ -8,6 +8,7 @@
 
 GBufferRenderPass::GBufferRenderPass()
     : m_pMeshView(NULL)
+    , m_pVisibleSubMeshes(NULL)
     , m_pGeometryVS(NULL)
     , m_pGeometryPS(NULL)
     , m_pGeometryVSBlob(NULL)
@@ -20,12 +21,6 @@ GBufferRenderPass::GBufferRenderPass()
     , m_pGlobalConstantBuffer(NULL)
     , m_pInputLayout(NULL)
 {
-    for (INT rtvIndex = 0; rtvIndex < GBUFFER_RTV_COUNT; ++rtvIndex)
-    {
-        m_pGBufferTextures[rtvIndex] = NULL;
-        m_pRTVs[rtvIndex] = NULL;
-        m_pSRVs[rtvIndex] = NULL;
-    }
 }
 
 GBufferRenderPass::~GBufferRenderPass()
@@ -102,6 +97,7 @@ void GBufferRenderPass::Destroy()
     SAFE_RELEASE(m_pRasterizerState);
     m_pGlobalConstantBuffer = NULL;
     m_pInputLayout = NULL;
+    m_pVisibleSubMeshes = NULL;
 
     ReleaseOwnedTargets();
 }
@@ -110,9 +106,7 @@ void GBufferRenderPass::ReleaseOwnedTargets()
 {
     for( INT rtvIndex = 0; rtvIndex < GBUFFER_RTV_COUNT; ++rtvIndex )
     {
-        SAFE_RELEASE( m_pSRVs[rtvIndex] );
-        SAFE_RELEASE( m_pRTVs[rtvIndex] );
-        SAFE_RELEASE( m_pGBufferTextures[rtvIndex] );
+        m_GBufferTargets[rtvIndex].Destroy();
     }
 }
 
@@ -132,34 +126,23 @@ HRESULT GBufferRenderPass::Resize( ID3D11Device* pd3dDevice, UINT width, UINT he
         DXGI_FORMAT_R16G16B16A16_FLOAT,
         DXGI_FORMAT_R16G16B16A16_FLOAT
     };
+    const char* debugNames[GBUFFER_RTV_COUNT] =
+    {
+        "GBuffer_Position",
+        "GBuffer_Normals",
+        "GBuffer_Tangent",
+        "GBuffer_MotionVector"
+    };
 
     for( INT index = 0; index < GBUFFER_RTV_COUNT; ++index )
     {
-        D3D11_TEXTURE2D_DESC texDesc = {};
-        texDesc.Width = width;
-        texDesc.Height = height;
-        texDesc.MipLevels = 1;
-        texDesc.ArraySize = 1;
-        texDesc.Format = formats[index];
-        texDesc.SampleDesc.Count = 1;
-        texDesc.Usage = D3D11_USAGE_DEFAULT;
-        texDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-
-        HRESULT hr = pd3dDevice->CreateTexture2D( &texDesc, NULL, &m_pGBufferTextures[index] );
-        if( FAILED( hr ) )
-        {
-            ReleaseOwnedTargets();
-            return hr;
-        }
-
-        hr = pd3dDevice->CreateRenderTargetView( m_pGBufferTextures[index], NULL, &m_pRTVs[index] );
-        if( FAILED( hr ) )
-        {
-            ReleaseOwnedTargets();
-            return hr;
-        }
-
-        hr = pd3dDevice->CreateShaderResourceView( m_pGBufferTextures[index], NULL, &m_pSRVs[index] );
+        HRESULT hr = DX::Texture::CreateColorTarget2D(
+            pd3dDevice,
+            width,
+            height,
+            formats[index],
+            debugNames[index],
+            m_GBufferTargets[index] );
         if( FAILED( hr ) )
         {
             ReleaseOwnedTargets();
@@ -185,7 +168,7 @@ HRESULT GBufferRenderPass::Execute(ID3D11DeviceContext* pd3dDeviceContext)
 
     for (INT rtvIndex = 0; rtvIndex < GBUFFER_RTV_COUNT; ++rtvIndex)
     {
-        if (m_pRTVs[rtvIndex] == NULL)
+        if (m_GBufferTargets[rtvIndex].GetRTV() == NULL)
         {
             return S_FALSE;
         }
@@ -202,10 +185,9 @@ HRESULT GBufferRenderPass::Execute(ID3D11DeviceContext* pd3dDeviceContext)
     }
 
 
-  
-
-    auto dxmatCameraProj = *m_FrameContext.pViewerCamera->GetProjMatrix();
-    D3DXMATRIX dxmatCameraView = *m_FrameContext.pViewerCamera->GetViewMatrix();
+    D3DXMATRIX dxmatCameraProj;
+    D3DXMATRIX dxmatCameraView;
+    ResolveCameraMatrices( dxmatCameraView, dxmatCameraProj );
     D3DXMATRIX dxmatWorld;
     if (m_pMeshView)
     {
@@ -225,6 +207,7 @@ HRESULT GBufferRenderPass::Execute(ID3D11DeviceContext* pd3dDeviceContext)
     V_RETURN( pd3dDeviceContext->Map( m_pGlobalConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource ) );
     CB_ALL_SHADOW_DATA* pcbAllShadowConstants = (CB_ALL_SHADOW_DATA*)MappedResource.pData;
     D3DXMatrixTranspose(&pcbAllShadowConstants->m_WorldViewProj, &dxmatWorldViewProjection);
+    D3DXMatrixTranspose(&pcbAllShadowConstants->m_World, &dxmatWorld);
     D3DXMatrixTranspose(&pcbAllShadowConstants->m_WorldView, &dxmatWorldView);
     pd3dDeviceContext->Unmap(m_pGlobalConstantBuffer, 0);
 
@@ -236,7 +219,7 @@ HRESULT GBufferRenderPass::Execute(ID3D11DeviceContext* pd3dDeviceContext)
     FLOAT clearColor[4] = { 0, 0, 0, 1 };
     for (INT i = 0; i < GBUFFER_RTV_COUNT; ++i)
     {
-        pd3dDeviceContext->ClearRenderTargetView(m_pRTVs[i], clearColor);
+        pd3dDeviceContext->ClearRenderTargetView(m_GBufferTargets[i].GetRTV(), clearColor);
     }
     pd3dDeviceContext->ClearDepthStencilView(
         m_FrameContext.output.pDepthStencilView,
@@ -245,7 +228,14 @@ HRESULT GBufferRenderPass::Execute(ID3D11DeviceContext* pd3dDeviceContext)
         0
     );
     //Select CB
-    pd3dDeviceContext->OMSetRenderTargets(GBUFFER_RTV_COUNT, m_pRTVs, m_FrameContext.output.pDepthStencilView);
+    ID3D11RenderTargetView* pRTVs[GBUFFER_RTV_COUNT] =
+    {
+        m_GBufferTargets[GBUFFER_RTV_POSITION].GetRTV(),
+        m_GBufferTargets[GBUFFER_RTV_NORMALS].GetRTV(),
+        m_GBufferTargets[GBUFFER_RTV_TANGENT].GetRTV(),
+        m_GBufferTargets[GBUFFER_RTV_MOTION_VECTOR].GetRTV()
+    };
+    pd3dDeviceContext->OMSetRenderTargets(GBUFFER_RTV_COUNT, pRTVs, m_FrameContext.output.pDepthStencilView);
     pd3dDeviceContext->RSSetState(m_pRasterizerState);
 
     pd3dDeviceContext->RSSetViewports(1, m_FrameContext.output.pViewport);
@@ -257,36 +247,10 @@ HRESULT GBufferRenderPass::Execute(ID3D11DeviceContext* pd3dDeviceContext)
     pd3dDeviceContext->VSSetConstantBuffers( 0, 1, &m_pGlobalConstantBuffer );
     pd3dDeviceContext->PSSetConstantBuffers( 0, 1, &m_pGlobalConstantBuffer );
 
-    m_pMeshView->Render(pd3dDeviceContext);
-
-    if (m_pMotionVectorVS != NULL && m_pMotionVectorPS != NULL && m_pRTVs[GBUFFER_RTV_MOTION_VECTOR] != NULL)
-    {
-        ID3D11RenderTargetView* pMotionVectorRTV = m_pRTVs[GBUFFER_RTV_MOTION_VECTOR];
-        pd3dDeviceContext->OMSetRenderTargets(1, &pMotionVectorRTV, m_FrameContext.output.pDepthStencilView);
-        pd3dDeviceContext->RSSetViewports(1, m_FrameContext.output.pViewport);
-        pd3dDeviceContext->VSSetShader(m_pMotionVectorVS, NULL, 0);
-        pd3dDeviceContext->PSSetShader(m_pMotionVectorPS, NULL, 0);
-
-        m_pMeshView->Render(pd3dDeviceContext);
-    }
+    m_pMeshView->RenderSubMeshes( pd3dDeviceContext, m_pVisibleSubMeshes );
 
     return S_OK;
 }
-
-//void GBufferRenderPass::SetOutput( )
-//{
-//    /*m_FrameContext.output = output;
-//
-//    m_pRTVs[GBUFFER_RTV_POSITION] = m_FrameContext.output.pPositionRTV;
-//    m_pRTVs[GBUFFER_RTV_NORMALS] = m_FrameContext.output.pNormalsRTV;
-//    m_pRTVs[GBUFFER_RTV_TANGENT] = m_FrameContext.output.pTangentRTV;
-//    m_pRTVs[GBUFFER_RTV_MOTION_VECTOR] = m_FrameContext.output.pMotionVectorRTV;
-//
-//    m_pSRVs[GBUFFER_RTV_POSITION] = m_FrameContext.output.pPositionSRV;
-//    m_pSRVs[GBUFFER_RTV_NORMALS] = m_FrameContext.output.pNormalsSRV;
-//    m_pSRVs[GBUFFER_RTV_TANGENT] = m_FrameContext.output.pTangentSRV;
-//    m_pSRVs[GBUFFER_RTV_MOTION_VECTOR] = m_FrameContext.output.pMotionVectorSRV;*/
-//}
 
 void GBufferRenderPass::SetOutput(ID3D11RenderTargetView* prtvBackBuffer, ID3D11DepthStencilView* pdsvBackBuffer, D3D11_VIEWPORT* pViewport)
 {
@@ -300,24 +264,49 @@ void GBufferRenderPass::SetMeshView(ISceneMesh* pMesh)
     m_pMeshView = pMesh;
 }
 
+void GBufferRenderPass::SetVisibleSubMeshes( const std::vector<INT>* pVisibleSubMeshes )
+{
+    m_pVisibleSubMeshes = pVisibleSubMeshes;
+}
+
+const DX::Texture::Resource2D* GBufferRenderPass::GetPositionTexture() const
+{
+    return &m_GBufferTargets[GBUFFER_RTV_POSITION];
+}
+
+const DX::Texture::Resource2D* GBufferRenderPass::GetNormalsTexture() const
+{
+    return &m_GBufferTargets[GBUFFER_RTV_NORMALS];
+}
+
+const DX::Texture::Resource2D* GBufferRenderPass::GetTangentTexture() const
+{
+    return &m_GBufferTargets[GBUFFER_RTV_TANGENT];
+}
+
+const DX::Texture::Resource2D* GBufferRenderPass::GetMotionVectorTexture() const
+{
+    return &m_GBufferTargets[GBUFFER_RTV_MOTION_VECTOR];
+}
+
 ID3D11ShaderResourceView* GBufferRenderPass::GetPositionSRV() const
 {
-    return m_pSRVs[GBUFFER_RTV_POSITION];
+    return GetPositionTexture()->GetSRV();
 }
 
 ID3D11ShaderResourceView* GBufferRenderPass::GetNormalsSRV() const
 {
-    return m_pSRVs[GBUFFER_RTV_NORMALS];
+    return GetNormalsTexture()->GetSRV();
 }
 
 ID3D11ShaderResourceView* GBufferRenderPass::GetTangentSRV() const
 {
-    return m_pSRVs[GBUFFER_RTV_TANGENT];
+    return GetTangentTexture()->GetSRV();
 }
 
 ID3D11ShaderResourceView* GBufferRenderPass::GetMotionVectorSRV() const
 {
-    return m_pSRVs[GBUFFER_RTV_MOTION_VECTOR];
+    return GetMotionVectorTexture()->GetSRV();
 }
 
 void GBufferRenderPass::SetCameraContext(CFirstPersonCamera* pViewerCamera, CFirstPersonCamera* pLightCamera, CAMERA_SELECTION selectedCamera)
@@ -325,4 +314,25 @@ void GBufferRenderPass::SetCameraContext(CFirstPersonCamera* pViewerCamera, CFir
     m_FrameContext.pViewerCamera = pViewerCamera;
     m_FrameContext.pLightCamera = pLightCamera;
     m_FrameContext.selectedCamera = selectedCamera;
+}
+
+void GBufferRenderPass::ResolveCameraMatrices( D3DXMATRIX& dxmatCameraView, D3DXMATRIX& dxmatCameraProj ) const
+{
+    dxmatCameraProj = *m_FrameContext.pViewerCamera->GetProjMatrix();
+    dxmatCameraView = *m_FrameContext.pViewerCamera->GetViewMatrix();
+
+    if( m_FrameContext.selectedCamera == LIGHT_CAMERA && m_FrameContext.pLightCamera != NULL )
+    {
+        dxmatCameraProj = *m_FrameContext.pLightCamera->GetProjMatrix();
+        dxmatCameraView = *m_FrameContext.pLightCamera->GetViewMatrix();
+    }
+    else if( m_FrameContext.selectedCamera >= ORTHO_CAMERA1 )
+    {
+        const INT cascadeIndex = INT( m_FrameContext.selectedCamera ) - INT( ORTHO_CAMERA1 );
+        if( cascadeIndex >= 0 && cascadeIndex < MAX_CASCADES )
+        {
+            dxmatCameraProj = m_FrameContext.matShadowProj[cascadeIndex];
+            dxmatCameraView = m_FrameContext.matShadowView;
+        }
+    }
 }

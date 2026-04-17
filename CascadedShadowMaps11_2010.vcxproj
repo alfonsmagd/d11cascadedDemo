@@ -411,7 +411,12 @@
   <ItemGroup>
     <ClCompile Include="CascadedShadowMaps11.cpp" />
     <ClCompile Include="CascadedShadowsManager.cpp" />
+    <ClCompile Include="ComparatorRenderPass.cpp" />
+    <ClCompile Include="CpuCullingSystem.cpp" />
+    <ClCompile Include="DeferredDecalRenderPass.cpp" />
     <ClCompile Include="DebugRenderPass.cpp" />
+    <ClCompile Include="DXBuffer.cpp" />
+    <ClCompile Include="DXTexture.cpp" />
     <ClCompile Include="DXUTGuiCompat.cpp" />
     <ClCompile Include="GBufferRenderPass.cpp" />
     <ClCompile Include="ShadowSampleMisc.cpp" />
@@ -438,7 +443,12 @@
     </ClCompile>
     <ClCompile Include="xnacollision.cpp" />
     <CLInclude Include="CascadedShadowsManager.h" />
+    <ClInclude Include="ComparatorRenderPass.h" />
+    <ClInclude Include="CpuCullingSystem.h" />
+    <ClInclude Include="DeferredDecalRenderPass.h" />
     <ClInclude Include="DebugRenderPass.h" />
+    <ClInclude Include="DXBuffer.h" />
+    <ClInclude Include="DXTexture.h" />
     <ClInclude Include="external\imgui\backends\imgui_impl_dx11.h" />
     <ClInclude Include="external\imgui\backends\imgui_impl_win32.h" />
     <ClInclude Include="external\imgui\imconfig.h" />
@@ -455,9 +465,12 @@
     <CLInclude Include="xnacollision.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="DeferredDecal.hlsl" />
+    <None Include="ComparatorFullscreen.hlsl" />
     <None Include="GBuffer.hlsl">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </None>
+    <None Include="DebugLightGizmo.hlsl" />
     <None Include="PackUnpackRG32.hlsl" />
     <None Include="RenderCascadeScene.hlsl" />
     <None Include="RenderCascadeShadow.hlsl" />

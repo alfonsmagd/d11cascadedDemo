@@ -74,8 +74,8 @@ cbuffer cbAllShadowData : register( b0 )
     float4          m_fCascadeFrustumsEyeSpaceDepthsFloat[2];  // The values along Z that seperate the cascades.
     float4          m_fCascadeFrustumsEyeSpaceDepthsFloat4[8];  // the values along Z that separte the cascades.  
                                                           // Wastefully stored in float4 so they are array indexable. 
-    float3          m_vLightDir;
-    float           m_fPaddingCB4;
+    float4          m_vLightDir;
+    float4          m_vShadowControl;
 
 };
 
@@ -435,6 +435,24 @@ float4 PSMain( VS_OUTPUT Input ) : SV_TARGET
 
     vVisualizeCascadeColor = vCascadeColorsMultiplier[iCurrentCascadeIndex];
          
+    if( m_vShadowControl.x < 0.5f )
+    {
+        if( !m_iVisualizeCascades ) vVisualizeCascadeColor = float4( 1.0f, 1.0f, 1.0f, 1.0f );
+
+        float3 vLightDir1 = float3( -1.0f, 1.0f, -1.0f );
+        float3 vLightDir2 = float3( 1.0f, 1.0f, -1.0f );
+        float3 vLightDir3 = float3( 0.0f, -1.0f, 0.0f );
+        float3 vLightDir4 = float3( 1.0f, 1.0f, 1.0f );
+        float fLighting =
+            saturate( dot( vLightDir1, Input.vNormal ) ) * 0.05f +
+            saturate( dot( vLightDir2, Input.vNormal ) ) * 0.05f +
+            saturate( dot( vLightDir3, Input.vNormal ) ) * 0.05f +
+            saturate( dot( vLightDir4, Input.vNormal ) ) * 0.05f;
+
+        fLighting += saturate( dot( m_vLightDir.xyz, Input.vNormal ) );
+        return fLighting * vVisualizeCascadeColor * vDiffuse * float4(1.0, 0.0, 1.0,1.0);
+    }
+
     if( USE_DERIVATIVES_FOR_DEPTH_OFFSET_FLAG ) 
     {
          CalculateRightAndUpTexelDepthDeltas ( vShadowMapTextureCoordDDX, vShadowMapTextureCoordDDY,
@@ -495,7 +513,7 @@ float4 PSMain( VS_OUTPUT Input ) : SV_TARGET
                       saturate( dot( vLightDir4 , Input.vNormal ) )*0.05f ;
     
     float4 vShadowLighting = fLighting * 0.5f;
-    fLighting += saturate( dot( m_vLightDir , Input.vNormal ) );
+    fLighting += saturate( dot( m_vLightDir.xyz, Input.vNormal ) );
     fLighting = lerp( vShadowLighting, fLighting, fPercentLit );
     
     return fLighting * vVisualizeCascadeColor * vDiffuse;

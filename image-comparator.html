@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image Comparison Studio</title>
+  <style>
+    :root {
+      --split-x: 50%;
+      --split-y: 50%;
+      --page-bg: #07111f;
+      --panel-bg: rgba(8, 15, 29, 0.82);
+      --panel-border: rgba(255, 255, 255, 0.08);
+      --text: #f8fafc;
+      --muted: #cbd5e1;
+      --accent: #f97316;
+      --accent-soft: rgba(249, 115, 22, 0.18);
+      --line: rgba(255, 255, 255, 0.95);
+      --danger: #fca5a5;
+      --radius: 28px;
+      --shadow: 0 26px 60px rgba(2, 6, 23, 0.42);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 24px;
+      display: grid;
+      place-items: center;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top, rgba(249, 115, 22, 0.25), transparent 28%),
+        linear-gradient(160deg, #020617 0%, #0f172a 42%, #172554 100%);
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    .page {
+      width: min(1180px, 100%);
+      display: grid;
+      gap: 18px;
+    }
+
+    .panel {
+      border-radius: var(--radius);
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(16px);
+    }
+
+    .hero {
+      padding: 26px 28px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: clamp(2rem, 4vw, 3.5rem);
+      line-height: 0.98;
+      letter-spacing: -0.03em;
+    }
+
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 1rem;
+      max-width: 76ch;
+    }
+
+    .workspace {
+      padding: 18px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .toolbar {
+      display: grid;
+      gap: 16px;
+    }
+
+    .toolbar-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      justify-content: space-between;
+    }
+
+    .group {
+      display: grid;
+      gap: 8px;
+    }
+
+    .group-label {
+      color: var(--muted);
+      font-size: 0.88rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .mode-switch,
+    .action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .button {
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(15, 23, 42, 0.72);
+      color: var(--text);
+      padding: 12px 16px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+    }
+
+    .button:hover {
+      transform: translateY(-1px);
+      background: rgba(30, 41, 59, 0.9);
+    }
+
+    .button.active,
+    .button.primary {
+      border-color: rgba(249, 115, 22, 0.7);
+      background: linear-gradient(135deg, rgba(249, 115, 22, 0.26), rgba(251, 146, 60, 0.12));
+      box-shadow: inset 0 0 0 1px rgba(249, 115, 22, 0.2);
+    }
+
+    .button.ghost {
+      background: rgba(15, 23, 42, 0.55);
+    }
+
+    .status {
+      min-height: 1.4em;
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+
+    .status.error {
+      color: var(--danger);
+    }
+
+    .ranges {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(2, minmax(220px, 1fr));
+    }
+
+    .range-card {
+      padding: 14px 16px;
+      border-radius: 22px;
+      background: rgba(15, 23, 42, 0.54);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      display: grid;
+      gap: 10px;
+    }
+
+    .range-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .range-card input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    .comparator-card {
+      display: grid;
+      gap: 14px;
+    }
+
+    .comparator {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      border-radius: calc(var(--radius) - 10px);
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background:
+        linear-gradient(45deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.035) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.035) 75%),
+        linear-gradient(160deg, #020617 0%, #111827 100%);
+      background-size: 32px 32px;
+      background-position: 0 0, 0 16px, 16px -16px, -16px 0;
+      user-select: none;
+      touch-action: none;
+    }
+
+    .comparator.mode-vertical {
+      cursor: ew-resize;
+    }
+
+    .comparator.mode-horizontal {
+      cursor: ns-resize;
+    }
+
+    .comparator.mode-cross {
+      cursor: move;
+    }
+
+    .comparator.is-file-dragging {
+      outline: 2px dashed rgba(248, 250, 252, 0.38);
+      outline-offset: -10px;
+    }
+
+    .image-slot,
+    .image-slot img {
+      position: absolute;
+      inset: 0;
+    }
+
+    .image-slot {
+      transition: clip-path 0.08s linear, opacity 0.2s ease;
+    }
+
+    .image-slot img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+      object-position: center center;
+      pointer-events: none;
+    }
+
+    .slot-1 {
+      z-index: 1;
+    }
+
+    .slot-2 {
+      z-index: 2;
+    }
+
+    .slot-3 {
+      z-index: 3;
+    }
+
+    .slot-4 {
+      z-index: 4;
+    }
+
+    .mode-vertical .slot-1 {
+      clip-path: inset(0 calc(100% - var(--split-x)) 0 0);
+      opacity: 1;
+    }
+
+    .mode-vertical .slot-2 {
+      clip-path: inset(0 0 0 var(--split-x));
+      opacity: 1;
+    }
+
+    .mode-vertical .slot-3,
+    .mode-vertical .slot-4 {
+      clip-path: inset(50% 50% 50% 50%);
+      opacity: 0;
+    }
+
+    .mode-horizontal .slot-1 {
+      clip-path: inset(0 0 calc(100% - var(--split-y)) 0);
+      opacity: 1;
+    }
+
+    .mode-horizontal .slot-2 {
+      clip-path: inset(var(--split-y) 0 0 0);
+      opacity: 1;
+    }
+
+    .mode-horizontal .slot-3,
+    .mode-horizontal .slot-4 {
+      clip-path: inset(50% 50% 50% 50%);
+      opacity: 0;
+    }
+
+    .mode-cross .slot-1 {
+      clip-path: inset(0 calc(100% - var(--split-x)) calc(100% - var(--split-y)) 0);
+      opacity: 1;
+    }
+
+    .mode-cross .slot-2 {
+      clip-path: inset(0 0 calc(100% - var(--split-y)) var(--split-x));
+      opacity: 1;
+    }
+
+    .mode-cross .slot-3 {
+      clip-path: inset(var(--split-y) calc(100% - var(--split-x)) 0 0);
+      opacity: 1;
+    }
+
+    .mode-cross .slot-4 {
+      clip-path: inset(var(--split-y) 0 0 var(--split-x));
+      opacity: 1;
+    }
+
+    .slot-label {
+      position: absolute;
+      z-index: 10;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(2, 6, 23, 0.68);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: var(--text);
+      font-size: 0.88rem;
+      letter-spacing: 0.03em;
+      max-width: min(34vw, 260px);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      pointer-events: none;
+    }
+
+    .slot-label.is-hidden {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    .slot-label.slot-1 {
+      top: 18px;
+      left: 18px;
+    }
+
+    .slot-label.slot-2 {
+      top: 18px;
+      right: 18px;
+    }
+
+    .slot-label.slot-3 {
+      bottom: 18px;
+      left: 18px;
+    }
+
+    .slot-label.slot-4 {
+      bottom: 18px;
+      right: 18px;
+    }
+
+    .mode-horizontal .slot-label.slot-2 {
+      top: auto;
+      bottom: 18px;
+    }
+
+    .mode-vertical .slot-label.slot-3,
+    .mode-vertical .slot-label.slot-4,
+    .mode-horizontal .slot-label.slot-3,
+    .mode-horizontal .slot-label.slot-4 {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    .drop-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 16;
+      pointer-events: none;
+    }
+
+    .drop-zone {
+      position: absolute;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      opacity: 0;
+      transition: opacity 0.18s ease, background 0.18s ease;
+    }
+
+    .drop-zone span {
+      padding: 12px 16px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(2, 6, 23, 0.76);
+      color: var(--text);
+      font-size: 0.86rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      box-shadow: 0 10px 28px rgba(2, 6, 23, 0.28);
+      max-width: 90%;
+      text-align: center;
+      transition: opacity 0.16s ease, transform 0.16s ease;
+    }
+
+    .drop-zone.no-text span {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+
+    .mode-vertical .drop-zone.slot-1,
+    .mode-vertical .drop-zone.slot-2,
+    .mode-horizontal .drop-zone.slot-1,
+    .mode-horizontal .drop-zone.slot-2,
+    .mode-cross .drop-zone {
+      display: flex;
+    }
+
+    .mode-vertical .drop-zone.slot-1 {
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 50%;
+    }
+
+    .mode-vertical .drop-zone.slot-2 {
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: 50%;
+    }
+
+    .mode-horizontal .drop-zone.slot-1 {
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 50%;
+    }
+
+    .mode-horizontal .drop-zone.slot-2 {
+      left: 0;
+      bottom: 0;
+      width: 100%;
+      height: 50%;
+    }
+
+    .mode-cross .drop-zone.slot-1 {
+      top: 0;
+      left: 0;
+      width: 50%;
+      height: 50%;
+    }
+
+    .mode-cross .drop-zone.slot-2 {
+      top: 0;
+      right: 0;
+      width: 50%;
+      height: 50%;
+    }
+
+    .mode-cross .drop-zone.slot-3 {
+      bottom: 0;
+      left: 0;
+      width: 50%;
+      height: 50%;
+    }
+
+    .mode-cross .drop-zone.slot-4 {
+      right: 0;
+      bottom: 0;
+      width: 50%;
+      height: 50%;
+    }
+
+    .comparator.is-file-dragging .drop-zone {
+      opacity: 0.42;
+    }
+
+    .drop-zone.active {
+      opacity: 1;
+      background: linear-gradient(135deg, rgba(249, 115, 22, 0.3), rgba(249, 115, 22, 0.08));
+    }
+
+    .divider-x,
+    .divider-y,
+    .main-handle {
+      position: absolute;
+      z-index: 14;
+      pointer-events: none;
+    }
+
+    .divider-x {
+      top: 0;
+      bottom: 0;
+      left: var(--split-x);
+      width: 0;
+      transform: translateX(-50%);
+      opacity: 0;
+    }
+
+    .divider-y {
+      left: 0;
+      right: 0;
+      top: var(--split-y);
+      height: 0;
+      transform: translateY(-50%);
+      opacity: 0;
+    }
+
+    .divider-x::before,
+    .divider-y::before {
+      content: "";
+      position: absolute;
+      background: var(--line);
+      box-shadow: 0 0 24px rgba(255, 255, 255, 0.4);
+    }
+
+    .divider-x::before {
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      width: 3px;
+      transform: translateX(-50%);
+    }
+
+    .divider-y::before {
+      left: 0;
+      right: 0;
+      top: 50%;
+      height: 3px;
+      transform: translateY(-50%);
+    }
+
+    .mode-vertical .divider-x,
+    .mode-cross .divider-x,
+    .mode-horizontal .divider-y,
+    .mode-cross .divider-y {
+      opacity: 1;
+    }
+
+    .main-handle {
+      width: 66px;
+      height: 66px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: rgba(2, 6, 23, 0.74);
+      border: 3px solid var(--line);
+      box-shadow: 0 18px 30px rgba(2, 6, 23, 0.34);
+    }
+
+    .main-handle::before {
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: 0.04em;
+    }
+
+    .mode-vertical .main-handle {
+      left: var(--split-x);
+      top: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    .mode-vertical .main-handle::before {
+      content: "\2194";
+      font-size: 1.6rem;
+    }
+
+    .mode-horizontal .main-handle {
+      left: 50%;
+      top: var(--split-y);
+      transform: translate(-50%, -50%);
+    }
+
+    .mode-horizontal .main-handle::before {
+      content: "\2195";
+      font-size: 1.6rem;
+    }
+
+    .mode-cross .main-handle {
+      left: var(--split-x);
+      top: var(--split-y);
+      transform: translate(-50%, -50%);
+    }
+
+    .mode-cross .main-handle::before {
+      content: "+";
+      font-size: 2rem;
+    }
+
+    .footer-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+
+    .hidden-input {
+      display: none;
+    }
+
+    @media (max-width: 820px) {
+      body {
+        padding: 14px;
+      }
+
+      .hero,
+      .workspace {
+        padding: 16px;
+      }
+
+      .ranges {
+        grid-template-columns: 1fr;
+      }
+
+      .toolbar-row {
+        justify-content: flex-start;
+      }
+
+      .main-handle {
+        width: 56px;
+        height: 56px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="panel hero">
+      <h1>Image Comparison Studio</h1>
+      <p>
+        Switch between a left/right split, a top/bottom split, or a 4-image cross view.
+        Drag image files straight into the live zones, use the button to add more images in sequence,
+        and press save to keep the current setup in this browser.
+      </p>
+    </section>
+
+    <section class="panel workspace">
+      <div class="toolbar">
+        <div class="toolbar-row">
+          <div class="group">
+            <span class="group-label">Mode</span>
+            <div class="mode-switch">
+              <button class="button" type="button" data-mode="vertical">Left / Right</button>
+              <button class="button active" type="button" data-mode="horizontal">Top / Bottom</button>
+              <button class="button" type="button" data-mode="cross">Cross x4</button>
+            </div>
+          </div>
+
+          <div class="group">
+            <span class="group-label">Actions</span>
+            <div class="action-row">
+              <button class="button primary" id="add-images-button" type="button">Add More Images</button>
+              <button class="button" id="save-layout-button" type="button">Save Layout</button>
+              <button class="button ghost" id="reset-button" type="button">Reset</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="ranges">
+          <div class="range-card" id="range-x-card">
+            <div class="range-head">
+              <label for="split-x-range">Left / Right Split</label>
+              <span id="split-x-value">50%</span>
+            </div>
+            <input id="split-x-range" type="range" min="1" max="99" value="50">
+          </div>
+
+          <div class="range-card" id="range-y-card">
+            <div class="range-head">
+              <label for="split-y-range">Top / Bottom Split</label>
+              <span id="split-y-value">50%</span>
+            </div>
+            <input id="split-y-range" type="range" min="1" max="99" value="50">
+          </div>
+        </div>
+
+        <p class="status" id="status-line">Ready. Drop an image on any live region or click Add More Images.</p>
+      </div>
+
+      <div class="comparator-card">
+        <div class="comparator mode-horizontal" id="comparator" aria-label="Image comparison studio">
+          <div class="image-slot slot-1">
+            <img data-slot="0" alt="Image 1">
+          </div>
+          <div class="image-slot slot-2">
+            <img data-slot="1" alt="Image 2">
+          </div>
+          <div class="image-slot slot-3">
+            <img data-slot="2" alt="Image 3">
+          </div>
+          <div class="image-slot slot-4">
+            <img data-slot="3" alt="Image 4">
+          </div>
+
+          <div class="drop-layer" aria-hidden="true">
+            <div class="drop-zone slot-1" data-drop-slot="0"><span>Drop for Image 1</span></div>
+            <div class="drop-zone slot-2" data-drop-slot="1"><span>Drop for Image 2</span></div>
+            <div class="drop-zone slot-3" data-drop-slot="2"><span>Drop for Image 3</span></div>
+            <div class="drop-zone slot-4" data-drop-slot="3"><span>Drop for Image 4</span></div>
+          </div>
+
+          <div class="slot-label slot-1" id="label-1">Image 1</div>
+          <div class="slot-label slot-2" id="label-2">Image 2</div>
+          <div class="slot-label slot-3" id="label-3">Image 3</div>
+          <div class="slot-label slot-4" id="label-4">Image 4</div>
+
+          <div class="divider-x" aria-hidden="true"></div>
+          <div class="divider-y" aria-hidden="true"></div>
+          <div class="main-handle" aria-hidden="true"></div>
+        </div>
+
+        <p class="footer-note">
+          Tip: in left/right mode, dropping files replaces the left or right image. In top/bottom mode it replaces the top or bottom image.
+          In cross mode you can use four different images, one for each quadrant.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <input class="hidden-input" id="file-input" type="file" accept="image/*" multiple>
+
+  <script>
+    const STORAGE_KEY = "image-comparison-studio-v2";
+    const VALID_MODES = ["vertical", "horizontal", "cross"];
+    const DEFAULT_SOURCES = ["image1.jpg", "image2.jpg", "image3.jpg", "image4.jpg"];
+    const DEFAULT_NAMES = ["Image 1", "Image 2", "Image 3", "Image 4"];
+
+    const comparator = document.getElementById("comparator");
+    const addImagesButton = document.getElementById("add-images-button");
+    const saveLayoutButton = document.getElementById("save-layout-button");
+    const resetButton = document.getElementById("reset-button");
+    const fileInput = document.getElementById("file-input");
+    const statusLine = document.getElementById("status-line");
+    const splitXRange = document.getElementById("split-x-range");
+    const splitYRange = document.getElementById("split-y-range");
+    const splitXValue = document.getElementById("split-x-value");
+    const splitYValue = document.getElementById("split-y-value");
+    const rangeXCard = document.getElementById("range-x-card");
+    const rangeYCard = document.getElementById("range-y-card");
+    const modeButtons = Array.from(document.querySelectorAll("[data-mode]"));
+    const imageNodes = Array.from(document.querySelectorAll(".image-slot img"));
+    const labelNodes = Array.from(document.querySelectorAll(".slot-label"));
+    const dropZones = Array.from(document.querySelectorAll(".drop-zone"));
+    const dropTexts = dropZones.map((zone) => zone.querySelector("span"));
+    const slotStates = imageNodes.map(() => ({
+      hasRealImage: false
+    }));
+
+    const state = loadState();
+    let fileDragDepth = 0;
+    let pointerDragActive = false;
+    let pointerMoved = false;
+    let hasUnsavedChanges = false;
+
+    imageNodes.forEach((imageNode, index) => {
+      imageNode.addEventListener("load", () => {
+        slotStates[index].hasRealImage = imageNode.dataset.placeholder !== "true";
+        updateSlotDecorations();
+      });
+
+      imageNode.addEventListener("error", () => {
+        const slot = state.slots[index];
+        const fallback = createPlaceholder(index + 1, slot.name);
+        imageNode.dataset.placeholder = "true";
+        slotStates[index].hasRealImage = false;
+        if (imageNode.src !== fallback) {
+          imageNode.src = fallback;
+        }
+        updateSlotDecorations();
+      });
+    });
+
+    modeButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const nextMode = button.dataset.mode;
+        if (!VALID_MODES.includes(nextMode) || nextMode === state.mode) {
+          return;
+        }
+
+        state.mode = nextMode;
+        renderMode();
+        renderSplitControls();
+        markDirty("Mode updated. Click Save Layout to keep it.");
+      });
+    });
+
+    splitXRange.addEventListener("input", () => {
+      state.splitX = clamp(Number(splitXRange.value), 1, 99);
+      renderSplitControls();
+      markDirty("Left / right split updated. Click Save Layout to keep it.");
+    });
+
+    splitYRange.addEventListener("input", () => {
+      state.splitY = clamp(Number(splitYRange.value), 1, 99);
+      renderSplitControls();
+      markDirty("Top / bottom split updated. Click Save Layout to keep it.");
+    });
+
+    addImagesButton.addEventListener("click", () => {
+      fileInput.click();
+    });
+
+    fileInput.addEventListener("change", async () => {
+      await assignFilesFromStart(state.nextSlot, Array.from(fileInput.files || []));
+      fileInput.value = "";
+    });
+
+    saveLayoutButton.addEventListener("click", () => {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        hasUnsavedChanges = false;
+        setStatus("Layout saved locally. It will be restored the next time you open this page.");
+      } catch (error) {
+        setStatus("Save failed. The browser storage is probably full because one or more images are too large.", true);
+      }
+    });
+
+    resetButton.addEventListener("click", () => {
+      localStorage.removeItem(STORAGE_KEY);
+      const defaults = createDefaultState();
+      state.mode = defaults.mode;
+      state.splitX = defaults.splitX;
+      state.splitY = defaults.splitY;
+      state.nextSlot = defaults.nextSlot;
+      state.slots = defaults.slots;
+      hasUnsavedChanges = false;
+      renderAll();
+      clearDropFeedback();
+      setStatus("Layout reset to defaults.");
+    });
+
+    comparator.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) {
+        return;
+      }
+
+      pointerDragActive = true;
+      pointerMoved = false;
+      comparator.setPointerCapture(event.pointerId);
+      updateSplitFromPointer(event.clientX, event.clientY);
+    });
+
+    comparator.addEventListener("pointermove", (event) => {
+      if (!pointerDragActive) {
+        return;
+      }
+
+      pointerMoved = true;
+      updateSplitFromPointer(event.clientX, event.clientY);
+    });
+
+    comparator.addEventListener("pointerup", (event) => {
+      if (!pointerDragActive) {
+        return;
+      }
+
+      pointerDragActive = false;
+      comparator.releasePointerCapture(event.pointerId);
+      if (pointerMoved) {
+        markDirty("Split handle moved. Click Save Layout to keep it.");
+      }
+    });
+
+    comparator.addEventListener("pointercancel", () => {
+      pointerDragActive = false;
+    });
+
+    comparator.addEventListener("dragenter", (event) => {
+      if (!containsImageFile(event)) {
+        return;
+      }
+
+      event.preventDefault();
+      fileDragDepth += 1;
+      updateDropFeedback(event.clientX, event.clientY);
+    });
+
+    comparator.addEventListener("dragover", (event) => {
+      if (!containsImageFile(event)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      updateDropFeedback(event.clientX, event.clientY);
+    });
+
+    comparator.addEventListener("dragleave", () => {
+      fileDragDepth = Math.max(0, fileDragDepth - 1);
+      if (fileDragDepth === 0) {
+        clearDropFeedback();
+      }
+    });
+
+    comparator.addEventListener("drop", async (event) => {
+      if (!containsImageFile(event)) {
+        return;
+      }
+
+      event.preventDefault();
+      const targetSlot = getTargetSlotFromPoint(event.clientX, event.clientY);
+      const files = Array.from(event.dataTransfer.files || []);
+
+      clearDropFeedback();
+      fileDragDepth = 0;
+      await assignFilesFromStart(targetSlot, files);
+    });
+
+    renderAll();
+    if (state.wasLoadedFromStorage) {
+      setStatus("Saved layout restored. You can keep editing or replace any image by dropping a new file.");
+    }
+
+    function createDefaultState() {
+      return {
+        mode: "horizontal",
+        splitX: 50,
+        splitY: 50,
+        nextSlot: 0,
+        slots: DEFAULT_NAMES.map((name, index) => ({
+          name,
+          source: DEFAULT_SOURCES[index]
+        }))
+      };
+    }
+
+    function loadState() {
+      const defaults = createDefaultState();
+
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) {
+          defaults.wasLoadedFromStorage = false;
+          return defaults;
+        }
+
+        const parsed = JSON.parse(raw);
+        const safeState = {
+          mode: VALID_MODES.includes(parsed.mode) ? parsed.mode : defaults.mode,
+          splitX: clamp(Number(parsed.splitX), 1, 99, defaults.splitX),
+          splitY: clamp(Number(parsed.splitY), 1, 99, defaults.splitY),
+          nextSlot: clampWholeNumber(parsed.nextSlot, 0, 3, defaults.nextSlot),
+          slots: defaults.slots.map((slot, index) => {
+            const loadedSlot = parsed.slots && parsed.slots[index] ? parsed.slots[index] : {};
+            return {
+              name: typeof loadedSlot.name === "string" && loadedSlot.name.trim()
+                ? loadedSlot.name.trim().slice(0, 80)
+                : slot.name,
+              source: typeof loadedSlot.source === "string" && loadedSlot.source
+                ? loadedSlot.source
+                : slot.source
+            };
+          }),
+          wasLoadedFromStorage: true
+        };
+
+        return safeState;
+      } catch (error) {
+        defaults.wasLoadedFromStorage = false;
+        return defaults;
+      }
+    }
+
+    function clamp(value, min, max, fallback = min) {
+      if (!Number.isFinite(value)) {
+        return fallback;
+      }
+      return Math.min(max, Math.max(min, value));
+    }
+
+    function clampWholeNumber(value, min, max, fallback = min) {
+      if (!Number.isFinite(Number(value))) {
+        return fallback;
+      }
+      return Math.min(max, Math.max(min, Math.round(Number(value))));
+    }
+
+    function createPlaceholder(index, label) {
+      const safeLabel = escapeSvg(label);
+      const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900">
+          <defs>
+            <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#0f172a" />
+              <stop offset="100%" stop-color="#1e293b" />
+            </linearGradient>
+          </defs>
+          <rect width="1600" height="900" fill="url(#bg)" />
+          <rect x="42" y="42" width="1516" height="816" rx="36" fill="none" stroke="#334155" stroke-width="4" stroke-dasharray="12 14" />
+          <text x="800" y="380" text-anchor="middle" fill="#f97316" font-size="64" font-family="Segoe UI, Arial, sans-serif">Drop an image here</text>
+          <text x="800" y="470" text-anchor="middle" fill="#e2e8f0" font-size="44" font-family="Segoe UI, Arial, sans-serif">${safeLabel}</text>
+          <text x="800" y="550" text-anchor="middle" fill="#94a3b8" font-size="30" font-family="Segoe UI, Arial, sans-serif">Slot ${index}</text>
+        </svg>
+      `;
+
+      return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+    }
+
+    function escapeSvg(text) {
+      return String(text)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll("\"", "&quot;")
+        .replaceAll("'", "&apos;");
+    }
+
+    function renderAll() {
+      renderMode();
+      renderImages();
+      renderSplitControls();
+      renderDropZoneText();
+    }
+
+    function renderMode() {
+      comparator.classList.remove("mode-vertical", "mode-horizontal", "mode-cross");
+      comparator.classList.add(`mode-${state.mode}`);
+
+      modeButtons.forEach((button) => {
+        button.classList.toggle("active", button.dataset.mode === state.mode);
+      });
+
+      rangeXCard.hidden = state.mode === "horizontal";
+      rangeYCard.hidden = state.mode === "vertical";
+    }
+
+    function renderImages() {
+      state.slots.forEach((slot, index) => {
+        slotStates[index].hasRealImage = false;
+        imageNodes[index].dataset.placeholder = "false";
+        imageNodes[index].src = slot.source;
+        imageNodes[index].alt = slot.name;
+        labelNodes[index].textContent = slot.name;
+      });
+      updateSlotDecorations();
+    }
+
+    function renderSplitControls() {
+      document.documentElement.style.setProperty("--split-x", `${state.splitX}%`);
+      document.documentElement.style.setProperty("--split-y", `${state.splitY}%`);
+      splitXRange.value = String(state.splitX);
+      splitYRange.value = String(state.splitY);
+      splitXValue.textContent = `${Math.round(state.splitX)}%`;
+      splitYValue.textContent = `${Math.round(state.splitY)}%`;
+    }
+
+    function renderDropZoneText() {
+      state.slots.forEach((slot, index) => {
+        dropTexts[index].textContent = slotStates[index].hasRealImage ? "" : `Drop image for ${slot.name}`;
+        dropZones[index].classList.toggle("no-text", slotStates[index].hasRealImage);
+      });
+    }
+
+    function updateSlotDecorations() {
+      state.slots.forEach((slot, index) => {
+        labelNodes[index].classList.toggle("is-hidden", slotStates[index].hasRealImage);
+      });
+      renderDropZoneText();
+    }
+
+    function updateSplitFromPointer(clientX, clientY) {
+      const rect = comparator.getBoundingClientRect();
+      const x = clamp(((clientX - rect.left) / rect.width) * 100, 1, 99, state.splitX);
+      const y = clamp(((clientY - rect.top) / rect.height) * 100, 1, 99, state.splitY);
+
+      if (state.mode === "vertical") {
+        state.splitX = x;
+      } else if (state.mode === "horizontal") {
+        state.splitY = y;
+      } else {
+        state.splitX = x;
+        state.splitY = y;
+      }
+
+      renderSplitControls();
+    }
+
+    function setStatus(message, isError = false) {
+      statusLine.textContent = message;
+      statusLine.classList.toggle("error", isError);
+    }
+
+    function markDirty(message) {
+      hasUnsavedChanges = true;
+      setStatus(message);
+    }
+
+    function containsImageFile(event) {
+      return Array.from(event.dataTransfer?.items || []).some((item) => {
+        return item.kind === "file" && item.type.startsWith("image/");
+      });
+    }
+
+    function getTargetSlotFromPoint(clientX, clientY) {
+      const rect = comparator.getBoundingClientRect();
+      const xRatio = (clientX - rect.left) / rect.width;
+      const yRatio = (clientY - rect.top) / rect.height;
+
+      if (state.mode === "vertical") {
+        return xRatio < 0.5 ? 0 : 1;
+      }
+
+      if (state.mode === "horizontal") {
+        return yRatio < 0.5 ? 0 : 1;
+      }
+
+      if (yRatio < 0.5) {
+        return xRatio < 0.5 ? 0 : 1;
+      }
+
+      return xRatio < 0.5 ? 2 : 3;
+    }
+
+    function updateDropFeedback(clientX, clientY) {
+      const activeSlot = getTargetSlotFromPoint(clientX, clientY);
+      comparator.classList.add("is-file-dragging");
+
+      dropZones.forEach((zone, index) => {
+        zone.classList.toggle("active", index === activeSlot);
+      });
+    }
+
+    function clearDropFeedback() {
+      comparator.classList.remove("is-file-dragging");
+      dropZones.forEach((zone) => zone.classList.remove("active"));
+    }
+
+    function readFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function assignFilesFromStart(startIndex, files) {
+      const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+      if (imageFiles.length === 0) {
+        setStatus("Please choose or drop image files only.", true);
+        return;
+      }
+
+      let slotIndex = startIndex;
+
+      try {
+        for (const file of imageFiles) {
+          const dataUrl = await readFileAsDataUrl(file);
+          state.slots[slotIndex] = {
+            name: file.name,
+            source: dataUrl
+          };
+          slotIndex = (slotIndex + 1) % state.slots.length;
+        }
+
+        state.nextSlot = slotIndex;
+        renderImages();
+        renderDropZoneText();
+
+        const countLabel = imageFiles.length === 1 ? "image was" : "images were";
+        markDirty(`${imageFiles.length} ${countLabel} loaded. Click Save Layout to keep the current setup.`);
+      } catch (error) {
+        setStatus(error.message || "One of the files could not be loaded.", true);
+      }
+    }
+  </script>
+</body>
+</html>

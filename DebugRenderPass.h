@@ -43,6 +43,7 @@ struct DebugSharedState
     INT selectedBoundingBox;
     bool renderBoundingBoxes;
     bool renderAllBoundingBoxes;
+    bool renderLightGizmos;
 
     DebugSharedState()
         : pMeshView( NULL )
@@ -51,6 +52,7 @@ struct DebugSharedState
         , selectedBoundingBox( -1 )
         , renderBoundingBoxes( false )
         , renderAllBoundingBoxes( false )
+        , renderLightGizmos( true )
     {
     }
 };
@@ -136,6 +138,33 @@ private:
     ID3D11DepthStencilState* m_pOverlayDepthState;
 };
 
+class DebugLightGizmoRendererModule : public IDebugBase
+{
+public:
+    explicit DebugLightGizmoRendererModule( const DebugSharedState& sharedState, const DebugFrameContext& frameContext );
+
+    HRESULT Create( ID3D11Device* pd3dDevice ) override;
+    void Destroy() override;
+    HRESULT Execute( ID3D11DeviceContext* pd3dDeviceContext ) override;
+
+private:
+    HRESULT EnsureVertexBufferCapacity( ID3D11Device* pd3dDevice, UINT vertexCount );
+
+private:
+    const DebugSharedState& m_SharedState;
+    const DebugFrameContext& m_FrameContext;
+    ID3D11VertexShader* m_pVS;
+    ID3D11PixelShader* m_pPS;
+    ID3DBlob* m_pVSBlob;
+    ID3DBlob* m_pPSBlob;
+    ID3D11InputLayout* m_pInputLayout;
+    ID3D11Buffer* m_pCBViewProj;
+    ID3D11Buffer* m_pVertexBuffer;
+    ID3D11RasterizerState* m_pRasterizerState;
+    ID3D11DepthStencilState* m_pDepthState;
+    UINT m_VertexBufferCapacity;
+};
+
 class DebugRenderPass : public IRenderPass
 {
 public:
@@ -163,8 +192,10 @@ public:
 
     void SetRenderBoundingBoxesEnabled( bool enabled );
     void SetRenderAllBoundingBoxesEnabled( bool enabled );
+    void SetRenderLightGizmosEnabled( bool enabled );
     bool IsRenderBoundingBoxesEnabled() const;
     bool IsRenderAllBoundingBoxesEnabled() const;
+    bool IsRenderLightGizmosEnabled() const;
     INT GetSelectedBoundingBox() const;
 
 private:
@@ -174,7 +205,8 @@ private:
     DebugSelectionModule* m_pDebugSelectionModule;
     DebugBBoxRendererModule* m_pDebugBBoxRendererModule;
     DebugOverlayRendererModule* m_pDebugOverlayRendererModule;
-    IDebugBase* m_pModules[3];
+    DebugLightGizmoRendererModule* m_pDebugLightGizmoRendererModule;
+    IDebugBase* m_pModules[4];
 
     static DebugRenderPass* s_pInstance;
 };

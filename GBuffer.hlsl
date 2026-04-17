@@ -51,4 +51,3 @@ PS_GBUFFER_OUTPUT PSGBuffer( VS_OUTPUT input )
     output.motionVector = float4( 0.0f, 0.0f, 0.0f, 1.0f );
     return output;
 }
-

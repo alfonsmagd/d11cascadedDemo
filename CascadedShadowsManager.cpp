@@ -93,8 +93,6 @@ CascadedShadowsManager::CascadedShadowsManager()
     m_iBlurBetweenCascades(0),
     m_fBlurBetweenCascadesAmount(0.005f),
     m_RenderOneTileVP(m_RenderVP[0]),
-    m_pcbGlobalConstantBuffer(NULL),
-    m_pcbVoxelParams(NULL),
     m_prsShadow(NULL),
     m_prsShadowPancake(NULL),
     m_prsScene(NULL),
@@ -233,9 +231,71 @@ HRESULT CascadedShadowsManager::PickDebugBoundingBox(ID3D11DeviceContext* pd3dDe
     INT mouseY,
     const D3D11_VIEWPORT& viewport)
 {
+    if( pMesh != NULL )
+    {
+        D3DXMATRIX dxmatCameraProj = *m_pViewerCamera->GetProjMatrix();
+        D3DXMATRIX dxmatCameraView = *m_pViewerCamera->GetViewMatrix();
+
+        if( m_eSelectedCamera == LIGHT_CAMERA )
+        {
+            dxmatCameraProj = *m_pLightCamera->GetProjMatrix();
+            dxmatCameraView = *m_pLightCamera->GetViewMatrix();
+        }
+        else if( m_eSelectedCamera >= ORTHO_CAMERA1 )
+        {
+            dxmatCameraProj = m_matShadowProj[(INT)m_eSelectedCamera - 2];
+            dxmatCameraView = m_matShadowView;
+        }
+
+        const D3DVIEWPORT9 d3dxViewport =
+        {
+            DWORD( viewport.TopLeftX ),
+            DWORD( viewport.TopLeftY ),
+            DWORD( viewport.Width ),
+            DWORD( viewport.Height ),
+            viewport.MinDepth,
+            viewport.MaxDepth
+        };
+
+        D3DXMATRIX dxmatIdentity;
+        D3DXMatrixIdentity( &dxmatIdentity );
+
+        D3DXVECTOR3 nearPoint( (FLOAT)mouseX, (FLOAT)mouseY, 0.0f );
+        D3DXVECTOR3 farPoint( (FLOAT)mouseX, (FLOAT)mouseY, 1.0f );
+        D3DXVECTOR3 worldNear;
+        D3DXVECTOR3 worldFar;
+        D3DXVec3Unproject( &worldNear, &nearPoint, &d3dxViewport, &dxmatCameraProj, &dxmatCameraView, &dxmatIdentity );
+        D3DXVec3Unproject( &worldFar, &farPoint, &d3dxViewport, &dxmatCameraProj, &dxmatCameraView, &dxmatIdentity );
+
+        D3DXVECTOR3 rayDirection = worldFar - worldNear;
+        if( D3DXVec3LengthSq( &rayDirection ) > 0.0f )
+        {
+            D3DXVec3Normalize( &rayDirection, &rayDirection );
+
+            INT pickedIndex = -1;
+            float pickedDistance = FLT_MAX;
+            if( pMesh->PickSubMesh( worldNear, rayDirection, pickedIndex, pickedDistance ) && pickedIndex >= 0 && pickedDistance < FLT_MAX )
+            {
+                const D3DXVECTOR3 pickedPosition = worldNear + ( rayDirection * pickedDistance );
+                m_DeferredDecalRenderPass.SetPickedDecalPosition( pickedPosition );
+            }
+            else
+            {
+                m_DeferredDecalRenderPass.ClearPickedDecalPosition();
+            }
+        }
+    }
+
     m_DebugRenderPass.SetMeshView(const_cast<ISceneMesh*>(pMesh));
     m_DebugRenderPass.SetCameraContext(m_pViewerCamera, m_pLightCamera, m_eSelectedCamera, m_matShadowView, m_matShadowProj, MAX_CASCADES);
     return m_DebugRenderPass.PickBoundingBox(pd3dDeviceContext, mouseX, mouseY, viewport);
+}
+
+HRESULT CascadedShadowsManager::ExecuteCpuCulling( ID3D11DeviceContext* pd3dDeviceContext, ISceneMesh* pMesh, CFirstPersonCamera* pViewCamera )
+{
+    m_CpuCullingSystem.SetMeshView( pMesh );
+    m_CpuCullingSystem.SetCameraContext( pViewCamera, m_pLightCamera, m_eSelectedCamera, m_matShadowView, m_matShadowProj, MAX_CASCADES );
+    return m_CpuCullingSystem.Execute( pd3dDeviceContext );
 }
 
 HRESULT CascadedShadowsManager::TranslateSelectedSubMesh(ID3D11Device* pd3dDevice,
@@ -267,8 +327,13 @@ HRESULT CascadedShadowsManager::TranslateSelectedSubMesh(ID3D11Device* pd3dDevic
     m_vDynamicVoxelAABBMax = m_vSceneAABBMax;
     m_bStaticVoxelizationDirty = true;
 
+    HRESULT hr = S_OK;
     m_DebugRenderPass.SetMeshView(pMesh);
-    return m_DebugRenderPass.HandleSceneChanged(pd3dDevice, pMesh);
+    V_RETURN( m_DebugRenderPass.HandleSceneChanged(pd3dDevice, pMesh) );
+    m_CpuCullingSystem.SetMeshView( pMesh );
+    m_DeferredDecalRenderPass.SetMeshView( pMesh );
+    m_GbufferRenderPass.SetMeshView( pMesh );
+    return S_OK;
 }
 
 HRESULT CascadedShadowsManager::HandleSceneChanged(ID3D11Device* pd3dDevice, ISceneMesh* pMesh)
@@ -288,11 +353,20 @@ HRESULT CascadedShadowsManager::HandleSceneChanged(ID3D11Device* pd3dDevice, ISc
 
     if (!pd3dDevice)
     {
+        m_CpuCullingSystem.SetMeshView( pMesh );
+        m_DeferredDecalRenderPass.SetMeshView( pMesh );
+        m_DeferredDecalRenderPass.ClearPickedDecalPosition();
+        m_GbufferRenderPass.SetMeshView( pMesh );
         return S_OK;
     }
-
+    HRESULT hr = S_OK;
     m_DebugRenderPass.SetMeshView(pMesh);
-    return m_DebugRenderPass.HandleSceneChanged(pd3dDevice, pMesh);
+    V_RETURN( m_DebugRenderPass.HandleSceneChanged(pd3dDevice, pMesh) );
+    m_CpuCullingSystem.SetMeshView( pMesh );
+    m_DeferredDecalRenderPass.SetMeshView( pMesh );
+    m_DeferredDecalRenderPass.ClearPickedDecalPosition();
+    m_GbufferRenderPass.SetMeshView( pMesh );
+    return S_OK;
 }
 
 
@@ -349,6 +423,8 @@ HRESULT CascadedShadowsManager::InitializeSceneContext(ID3D11Device* pd3dDevice,
 
     m_DebugRenderPass.SetMeshView(pMesh);
     V_RETURN(m_DebugRenderPass.HandleSceneChanged(pd3dDevice, pMesh));
+    m_CpuCullingSystem.SetMeshView( pMesh );
+    m_DeferredDecalRenderPass.SetMeshView( pMesh );
     return hr;
 }
 
@@ -615,40 +691,35 @@ HRESULT CascadedShadowsManager::CreateConstantBufferResources(ID3D11Device* pd3d
 {
     HRESULT hr = S_OK;
 
-    const auto createDynamicConstantBuffer =
-        [&](UINT byteWidth, ID3D11Buffer** ppBuffer, const char* debugName) -> HRESULT
-        {
-            if (*ppBuffer != NULL)
-            {
-                return S_OK;
-            }
+    if( m_CBGlobal.GetBuffer() == NULL )
+    {
+        V_RETURN( DX::Buffer::CreateConstant(
+            pd3dDevice,
+            sizeof( CB_ALL_SHADOW_DATA ),
+            0,
+            "CB_ALL_SHADOW_DATA",
+            m_CBGlobal ) );
+    }
 
-            D3D11_BUFFER_DESC desc = {};
-            desc.Usage = D3D11_USAGE_DYNAMIC;
-            desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-            desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-            desc.MiscFlags = 0;
-            desc.ByteWidth = byteWidth;
+    if( m_CBVoxelParams.GetBuffer() == NULL )
+    {
+        V_RETURN( DX::Buffer::CreateConstant(
+            pd3dDevice,
+            sizeof( CB_VOXELIZATION_PARAMS ),
+            2,
+            "CB_VOXELIZATION_PARAMS",
+            m_CBVoxelParams ) );
+    }
 
-            HRESULT localHr = pd3dDevice->CreateBuffer(&desc, NULL, ppBuffer);
-            if (SUCCEEDED(localHr))
-            {
-                DXUT_SetDebugName(*ppBuffer, debugName);
-            }
-            return localHr;
-        };
-
-    V_RETURN(createDynamicConstantBuffer(sizeof(CB_ALL_SHADOW_DATA),
-        &m_pcbGlobalConstantBuffer,
-        "CB_ALL_SHADOW_DATACB_ALL_SHADOW_DATA"));
-
-    V_RETURN(createDynamicConstantBuffer(sizeof(CB_VOXELIZATION_PARAMS),
-        &m_pcbVoxelParams,
-        "CB_VOXELIZATION_PARAMS"));
-
-    V_RETURN(createDynamicConstantBuffer(sizeof(CB_VISUALIZE_VOXELS),
-        &m_pcbVisualizeVoxels,
-        "CB_VISUALIZE_VOXELS"));
+    if( m_CBVisualizeVoxels.GetBuffer() == NULL )
+    {
+        V_RETURN( DX::Buffer::CreateConstant(
+            pd3dDevice,
+            sizeof( CB_VISUALIZE_VOXELS ),
+            3,
+            "CB_VISUALIZE_VOXELS",
+            m_CBVisualizeVoxels ) );
+    }
 
     return hr;
 }
@@ -658,7 +729,10 @@ HRESULT CascadedShadowsManager::CreateDebugResources(ID3D11Device* pd3dDevice, c
     HRESULT hr = S_OK;
     m_DebugRenderPass.SetMeshView(const_cast<ISceneMesh*>(pMesh));
     V_RETURN(m_DebugRenderPass.Create(pd3dDevice));
-    return m_DebugRenderPass.HandleSceneChanged(pd3dDevice, const_cast<ISceneMesh*>(pMesh));
+    V_RETURN(m_DebugRenderPass.HandleSceneChanged(pd3dDevice, const_cast<ISceneMesh*>(pMesh)));
+    m_CpuCullingSystem.SetMeshView( const_cast<ISceneMesh*>( pMesh ) );
+    V_RETURN( m_CpuCullingSystem.Create( pd3dDevice ) );
+    return S_OK;
 }
 
 HRESULT CascadedShadowsManager::CreateGBufferResources(ID3D11Device* pd3dDevice, const ISceneMesh* pMesh)
@@ -670,6 +744,12 @@ HRESULT CascadedShadowsManager::CreateGBufferResources(ID3D11Device* pd3dDevice,
                                           DXUTGetDXGIBackBufferSurfaceDesc()->Width,
                                           DXUTGetDXGIBackBufferSurfaceDesc()->Height ) );
     return hr;
+}
+
+HRESULT CascadedShadowsManager::CreateDeferredDecalResources( ID3D11Device* pd3dDevice, const ISceneMesh* pMesh )
+{
+    m_DeferredDecalRenderPass.SetMeshView( const_cast<ISceneMesh*>( pMesh ) );
+    return m_DeferredDecalRenderPass.Create( pd3dDevice );
 }
 
 HRESULT CascadedShadowsManager::CreateShadowMapResources(ID3D11Device* pd3dDevice)
@@ -699,6 +779,7 @@ HRESULT CascadedShadowsManager::Init(ID3D11Device* pd3dDevice,
     V_RETURN(CreateConstantBufferResources(pd3dDevice));
     V_RETURN(CreateDebugResources(pd3dDevice, pMesh));
     V_RETURN(CreateGBufferResources(pd3dDevice, pMesh));
+    V_RETURN(CreateDeferredDecalResources(pd3dDevice, pMesh));
     V_RETURN(CreateShadowMapResources(pd3dDevice));
 
     return hr;
@@ -734,6 +815,8 @@ HRESULT CascadedShadowsManager::DestroyAndDeallocateShadowResources()
     SAFE_RELEASE(m_pVoxelDrawArgsBuffer);
     SAFE_RELEASE(m_pVoxelCubeVertexBuffer);
 
+    m_DeferredDecalRenderPass.Destroy();
+
     SAFE_RELEASE(m_pDynamicVoxelAlbedoTex);
     SAFE_RELEASE(m_pDynamicVoxelAlbedoUAV);
     SAFE_RELEASE(m_pDynamicVoxelAlbedoSRV);
@@ -742,9 +825,9 @@ HRESULT CascadedShadowsManager::DestroyAndDeallocateShadowResources()
     SAFE_RELEASE(m_pDynamicVoxelMaskUAV);
     SAFE_RELEASE(m_pDynamicVoxelMaskSRV);
 
-    SAFE_RELEASE(m_pcbGlobalConstantBuffer);
-    SAFE_RELEASE(m_pcbVoxelParams);
-    SAFE_RELEASE(m_pcbVisualizeVoxels);
+    m_CBGlobal.Destroy();
+    m_CBVoxelParams.Destroy();
+    m_CBVisualizeVoxels.Destroy();
 
     SAFE_RELEASE(m_prsShadow);
     SAFE_RELEASE(m_prsShadowPancake);
@@ -763,6 +846,7 @@ HRESULT CascadedShadowsManager::DestroyAndDeallocateShadowResources()
 
     m_DebugRenderPass.Destroy();
     m_GbufferRenderPass.Destroy();
+    m_CpuCullingSystem.Destroy();
 
     for (INT iCascadeIndex = 0; iCascadeIndex < MAX_CASCADES; ++iCascadeIndex)
     {
@@ -1409,7 +1493,6 @@ HRESULT CascadedShadowsManager::InitFrame(ID3D11Device* pd3dDevice, ISceneMesh* 
         V_RETURN(m_DebugRenderPass.HandleSceneChanged(pd3dDevice, mesh));
     }
 
-
     V_RETURN(CreateShadowMapResources(pd3dDevice));
 
     // Copy D3DX matricies into XNA Math matricies.
@@ -1628,7 +1711,6 @@ HRESULT CascadedShadowsManager::InitFrame(ID3D11Device* pd3dDevice, ISceneMesh* 
     }
     m_matShadowView = *m_pLightCamera->GetViewMatrix();
 
-
     return S_OK;
 }
 
@@ -1642,6 +1724,17 @@ HRESULT CascadedShadowsManager::RenderShadowsForAllCascades(ID3D11Device* pd3dDe
 ) {
 
     HRESULT hr = S_OK;
+
+    if( !pd3dDeviceContext || !m_pCascadedShadowMapDSV )
+    {
+        return E_INVALIDARG;
+    }
+
+    if( !m_bUseShadows )
+    {
+        pd3dDeviceContext->ClearDepthStencilView( m_pCascadedShadowMapDSV, D3D11_CLEAR_DEPTH, 1.0f, 0 );
+        return S_OK;
+    }
 
     D3DXMATRIX dxmatWorldViewProjection;
     D3DXMATRIX dxmatWorld;
@@ -1671,11 +1764,12 @@ HRESULT CascadedShadowsManager::RenderShadowsForAllCascades(ID3D11Device* pd3dDe
         dxmatWorldViewProjection = dxmatWorld * m_matShadowView * m_matShadowProj[currentCascade];
 
         D3D11_MAPPED_SUBRESOURCE MappedResource;
-        V(pd3dDeviceContext->Map(m_pcbGlobalConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
+        V(DX::Buffer::MapWriteDiscard(pd3dDeviceContext, m_CBGlobal, MappedResource));
         CB_ALL_SHADOW_DATA* pcbAllShadowConstants = (CB_ALL_SHADOW_DATA*)MappedResource.pData;
         D3DXMatrixTranspose(&pcbAllShadowConstants->m_WorldViewProj, &dxmatWorldViewProjection);
         D3DXMatrixTranspose(&pcbAllShadowConstants->m_World, &dxmatWorld);
-        pd3dDeviceContext->Unmap(m_pcbGlobalConstantBuffer, 0);
+        pcbAllShadowConstants->m_vShadowControl = D3DXVECTOR4( m_bUseShadows ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f );
+        DX::Buffer::Unmap(pd3dDeviceContext, m_CBGlobal);
         pd3dDeviceContext->IASetInputLayout(m_pVertexLayoutMesh);
 
         // No pixel shader is bound as we're only writing out depth.
@@ -1683,7 +1777,7 @@ HRESULT CascadedShadowsManager::RenderShadowsForAllCascades(ID3D11Device* pd3dDe
         pd3dDeviceContext->PSSetShader(NULL, NULL, 0);
         pd3dDeviceContext->GSSetShader(NULL, NULL, 0);
 
-        pd3dDeviceContext->VSSetConstantBuffers(0, 1, &m_pcbGlobalConstantBuffer);
+        DX::Buffer::BindConstantVS(pd3dDeviceContext, m_CBGlobal);
 
         pMesh->Render(pd3dDeviceContext, 0, 1);
     }
@@ -1742,7 +1836,7 @@ HRESULT CascadedShadowsManager::RenderScene(ID3D11DeviceContext* pd3dDeviceConte
     D3DXMATRIX dxmatWorldView = dxmatWorld * dxmatCameraView;
     D3DXMATRIX dxmatWorldViewProjection = dxmatWorldView * dxmatCameraProj;
 
-    V(pd3dDeviceContext->Map(m_pcbGlobalConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
+    V(DX::Buffer::MapWriteDiscard(pd3dDeviceContext, m_CBGlobal, MappedResource));
     CB_ALL_SHADOW_DATA* pcbAllShadowConstants = (CB_ALL_SHADOW_DATA*)MappedResource.pData;
     D3DXMatrixTranspose(&pcbAllShadowConstants->m_WorldViewProj, &dxmatWorldViewProjection);
     D3DXMatrixTranspose(&pcbAllShadowConstants->m_WorldView, &dxmatWorldView);
@@ -1805,9 +1899,10 @@ HRESULT CascadedShadowsManager::RenderScene(ID3D11DeviceContext* pd3dDeviceConte
     D3DXVec3Normalize(&ep, &ep);
 
     pcbAllShadowConstants->m_vLightDir = D3DXVECTOR4(ep.x, ep.y, ep.z, 1.0f);
+    pcbAllShadowConstants->m_vShadowControl = D3DXVECTOR4( m_bUseShadows ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f );
     pcbAllShadowConstants->m_nCascadeLevels = m_CopyOfCascadeConfig.m_nCascadeLevels;
     pcbAllShadowConstants->m_iVisualizeCascades = bVisualize;
-    pd3dDeviceContext->Unmap(m_pcbGlobalConstantBuffer, 0);
+    DX::Buffer::Unmap(pd3dDeviceContext, m_CBGlobal);
 
 
     pd3dDeviceContext->PSSetSamplers(0, 1, &m_pSamLinear);
@@ -1853,10 +1948,11 @@ HRESULT CascadedShadowsManager::RenderScene(ID3D11DeviceContext* pd3dDeviceConte
 
     pd3dDeviceContext->PSSetShaderResources(5, 1, &m_pCascadedShadowMapSRV);
 
-    pd3dDeviceContext->VSSetConstantBuffers(0, 1, &m_pcbGlobalConstantBuffer);
-    pd3dDeviceContext->PSSetConstantBuffers(0, 1, &m_pcbGlobalConstantBuffer);
+    DX::Buffer::BindConstantVS(pd3dDeviceContext, m_CBGlobal);
+    DX::Buffer::BindConstantPS(pd3dDeviceContext, m_CBGlobal);
 
-    pMesh->Render(pd3dDeviceContext, 0, 1);
+    const std::vector<INT>* pVisibleSubMeshes = m_CpuCullingSystem.IsEnabled() ? &m_CpuCullingSystem.GetVisibleSubMeshIndices() : NULL;
+    pMesh->RenderSubMeshes( pd3dDeviceContext, pVisibleSubMeshes, 0, 1 );
 
     ID3D11ShaderResourceView* nv[] = { NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL };
     pd3dDeviceContext->PSSetShaderResources(5, 8, nv);
@@ -1877,14 +1973,35 @@ HRESULT CascadedShadowsManager::RenderDebug(ID3D11DeviceContext* pd3dDeviceConte
     return m_DebugRenderPass.Execute(pd3dDeviceContext);
 }
 
-HRESULT CascadedShadowsManager::RenderGBuffer(ID3D11DeviceContext* pd3dDeviceContext, ID3D11RenderTargetView* prtvBackBuffer, ID3D11DepthStencilView* pdsvBackBuffer, D3D11_VIEWPORT* dxutViewPort)
+HRESULT CascadedShadowsManager::RenderGBuffer(ID3D11DeviceContext* pd3dDeviceContext,
+    ID3D11RenderTargetView* prtvBackBuffer,
+    ID3D11DepthStencilView* pdsvBackBuffer,
+    D3D11_VIEWPORT* dxutViewPort,
+    CFirstPersonCamera* pActiveCamera,
+    ISceneMesh* pMesh)
 {
-    m_GbufferRenderPass.SetCameraContext(m_pViewerCamera, m_pLightCamera, m_eSelectedCamera);
-    m_GbufferRenderPass.SetGlobalConstantBuffer(m_pcbGlobalConstantBuffer);
+    m_GbufferRenderPass.SetMeshView( pMesh );
+    m_GbufferRenderPass.SetCameraContext(pActiveCamera, m_pLightCamera, m_eSelectedCamera);
+    m_GbufferRenderPass.SetGlobalConstantBuffer(m_CBGlobal.GetBuffer());
     m_GbufferRenderPass.SetInputVertexLayout(m_pVertexLayoutMesh);
+    m_GbufferRenderPass.SetVisibleSubMeshes( m_CpuCullingSystem.IsEnabled() ? &m_CpuCullingSystem.GetVisibleSubMeshIndices() : NULL );
     m_GbufferRenderPass.SetOutput(prtvBackBuffer, pdsvBackBuffer, dxutViewPort);
     m_GbufferRenderPass.Execute(pd3dDeviceContext);
     return S_OK;
+}
+
+HRESULT CascadedShadowsManager::RenderDeferredDecal( ID3D11DeviceContext* pd3dDeviceContext,
+    ID3D11RenderTargetView* prtvBackBuffer,
+    D3D11_VIEWPORT* dxutViewPort,
+    CFirstPersonCamera* pActiveCamera,
+    ISceneMesh* pMesh )
+{
+    m_DeferredDecalRenderPass.SetEnabled( m_bRenderDeferredDecal );
+    m_DeferredDecalRenderPass.SetMeshView( pMesh );
+    m_DeferredDecalRenderPass.SetCameraContext( pActiveCamera );
+    m_DeferredDecalRenderPass.SetOutput( prtvBackBuffer, dxutViewPort );
+    m_DeferredDecalRenderPass.SetGBufferInputs( m_GbufferRenderPass.GetPositionTexture(), m_GbufferRenderPass.GetNormalsTexture() );
+    return m_DeferredDecalRenderPass.Execute( pd3dDeviceContext );
 }
 
 HRESULT CascadedShadowsManager::ResizeGBuffer( ID3D11Device* pd3dDevice, UINT width, UINT height )
@@ -1910,7 +2027,7 @@ HRESULT CascadedShadowsManager::RenderVoxelizationVolume(ID3D11DeviceContext* pd
     if (!pd3dDeviceContext || !pMesh ||
         !m_pVertexLayoutMesh ||
         !m_pvsVoxelization || !m_pgsVoxelization || !m_ppsVoxelization ||
-        !m_pcbGlobalConstantBuffer || !m_pcbVoxelParams ||
+        !m_CBGlobal.GetBuffer() || !m_CBVoxelParams.GetBuffer() ||
         !pAlbedoUAV || !pMaskUAV)
     {
         return E_FAIL;
@@ -1922,7 +2039,7 @@ HRESULT CascadedShadowsManager::RenderVoxelizationVolume(ID3D11DeviceContext* pd
     pd3dDeviceContext->ClearUnorderedAccessViewUint(pMaskUAV, clearMask);
 
     D3D11_MAPPED_SUBRESOURCE MappedResource;
-    V_RETURN(pd3dDeviceContext->Map(m_pcbGlobalConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
+    V_RETURN(DX::Buffer::MapWriteDiscard(pd3dDeviceContext, m_CBGlobal, MappedResource));
     CB_ALL_SHADOW_DATA* pcbAllShadowConstants = (CB_ALL_SHADOW_DATA*)MappedResource.pData;
 
     D3DXMATRIX dxmatWorld;
@@ -1938,9 +2055,9 @@ HRESULT CascadedShadowsManager::RenderVoxelizationVolume(ID3D11DeviceContext* pd
     D3DXMatrixIdentity(&dxmatIdentity);
     D3DXMatrixTranspose(&pcbAllShadowConstants->m_WorldViewProj, &dxmatIdentity);
     D3DXMatrixTranspose(&pcbAllShadowConstants->m_World, &dxmatWorld);
-    pd3dDeviceContext->Unmap(m_pcbGlobalConstantBuffer, 0);
+    DX::Buffer::Unmap(pd3dDeviceContext, m_CBGlobal);
 
-    V_RETURN(pd3dDeviceContext->Map(m_pcbVoxelParams, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
+    V_RETURN(DX::Buffer::MapWriteDiscard(pd3dDeviceContext, m_CBVoxelParams, MappedResource));
     CB_VOXELIZATION_PARAMS* pcbVoxelParams = (CB_VOXELIZATION_PARAMS*)MappedResource.pData;
     XMStoreFloat3((XMFLOAT3*)&pcbVoxelParams->gVoxelMin, vVoxelMin);
     XMStoreFloat3((XMFLOAT3*)&pcbVoxelParams->gVoxelMax, vVoxelMax);
@@ -1951,7 +2068,7 @@ HRESULT CascadedShadowsManager::RenderVoxelizationVolume(ID3D11DeviceContext* pd
     pcbVoxelParams->gXYFootprintScale = m_fVoxelXYFootprintScale;
     pcbVoxelParams->gYZFootprintScale = m_fVoxelYZFootprintScale;
     pcbVoxelParams->_padding = 0.0f;
-    pd3dDeviceContext->Unmap(m_pcbVoxelParams, 0);
+    DX::Buffer::Unmap(pd3dDeviceContext, m_CBVoxelParams);
 
     const UINT voxelViewportSize = (gridSizeX > gridSizeY) ? gridSizeX : gridSizeY;
     D3D11_VIEWPORT voxelViewport = {};
@@ -1979,9 +2096,9 @@ HRESULT CascadedShadowsManager::RenderVoxelizationVolume(ID3D11DeviceContext* pd
     pd3dDeviceContext->GSSetShader(m_pgsVoxelization, NULL, 0);
     pd3dDeviceContext->PSSetShader(m_ppsVoxelization, NULL, 0);
 
-    pd3dDeviceContext->VSSetConstantBuffers(0, 1, &m_pcbGlobalConstantBuffer);
-    pd3dDeviceContext->GSSetConstantBuffers(2, 1, &m_pcbVoxelParams);
-    pd3dDeviceContext->PSSetConstantBuffers(2, 1, &m_pcbVoxelParams);
+    DX::Buffer::BindConstantVS(pd3dDeviceContext, m_CBGlobal);
+    DX::Buffer::BindConstantGS(pd3dDeviceContext, m_CBVoxelParams);
+    DX::Buffer::BindConstantPS(pd3dDeviceContext, m_CBVoxelParams);
     pd3dDeviceContext->PSSetSamplers(0, 1, &m_pSamLinear);
 
     // Render the mesh with its diffuse textures bound in t0 by SDKMesh.
@@ -2076,7 +2193,7 @@ HRESULT CascadedShadowsManager::RenderVisualizeVoxelization(ID3D11DeviceContext*
         !m_pvsVisualizeVoxelization || !m_ppsVisualizeVoxelization ||
         !m_pVoxelAlbedoSRV || !m_pVoxelMaskSRV ||
         !m_pVoxelInstanceSRV || !m_pVoxelDrawArgsBuffer || !m_pVoxelCubeVertexBuffer ||
-        !m_pVertexLayoutVoxelVisualize || !m_pcbVisualizeVoxels)
+        !m_pVertexLayoutVoxelVisualize || !m_CBVisualizeVoxels.GetBuffer())
     {
         return E_FAIL;
     }
@@ -2093,7 +2210,7 @@ HRESULT CascadedShadowsManager::RenderVisualizeVoxelization(ID3D11DeviceContext*
     XMStoreFloat3((XMFLOAT3*)&staticVoxelMax, m_vStaticVoxelAABBMax);
 
     D3D11_MAPPED_SUBRESOURCE MappedResource;
-    V_RETURN(pd3dDeviceContext->Map(m_pcbVisualizeVoxels, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource));
+    V_RETURN(DX::Buffer::MapWriteDiscard(pd3dDeviceContext, m_CBVisualizeVoxels, MappedResource));
     CB_VISUALIZE_VOXELS* pcbVisualize = (CB_VISUALIZE_VOXELS*)MappedResource.pData;
     D3DXMatrixTranspose(&pcbVisualize->gWorldViewProj, &dxmatViewProj);
     D3DXMatrixTranspose(&pcbVisualize->gWorld, &dxmatIdentity);
@@ -2112,7 +2229,7 @@ HRESULT CascadedShadowsManager::RenderVisualizeVoxelization(ID3D11DeviceContext*
     D3DXVec3Normalize(&ep, &ep);
     pcbVisualize->gLightDir = ep;
     pcbVisualize->gPadding1 = 0.0f;
-    pd3dDeviceContext->Unmap(m_pcbVisualizeVoxels, 0);
+    DX::Buffer::Unmap(pd3dDeviceContext, m_CBVisualizeVoxels);
 
     pd3dDeviceContext->OMSetRenderTargets(1, &prtvBackBuffer, pdsvBackBuffer);
     pd3dDeviceContext->RSSetState(m_prsScene);
@@ -2130,8 +2247,8 @@ HRESULT CascadedShadowsManager::RenderVisualizeVoxelization(ID3D11DeviceContext*
     pd3dDeviceContext->GSSetShader(NULL, NULL, 0);
     pd3dDeviceContext->PSSetShader(m_ppsVisualizeVoxelization, NULL, 0);
 
-    pd3dDeviceContext->VSSetConstantBuffers(3, 1, &m_pcbVisualizeVoxels);
-    pd3dDeviceContext->PSSetConstantBuffers(3, 1, &m_pcbVisualizeVoxels);
+    DX::Buffer::BindConstantVS(pd3dDeviceContext, m_CBVisualizeVoxels);
+    DX::Buffer::BindConstantPS(pd3dDeviceContext, m_CBVisualizeVoxels);
 
     ID3D11ShaderResourceView* voxelSRVs[2] =
     {
